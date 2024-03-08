@@ -2,6 +2,8 @@ import os
 import json
 import librosa
 import argparse
+import logging
+import soundfile as sf
 
 """
 -i/--input_dir must have the following structure:
@@ -20,53 +22,115 @@ DATASET_dur_{x}_ovl_{y}_min_{z}
 ...
 """
 
+def setup_logger(log_file):
+    # Create a logger
+    logger = logging.getLogger("short_audios_logger")
+    logger.setLevel(logging.INFO)
+
+    # Create a file handler and set the level to INFO
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+
+    # Create a formatter and set the format for the handler
+    formatter = logging.Formatter("%(asctime)s - %(message)s")
+    file_handler.setFormatter(formatter)
+
+    # Add the file handler to the logger
+    logger.addHandler(file_handler)
+    return logger
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Segment audio files")
     parser.add_argument("-i", "--input_dir", type=str, required=True,
                         help="Input directory containing audio files")
-    #parser.add_argument("-o", "--output_dir", type=str, required=True,
-    #                    help="Output directory to save segmented audio files")
+    parser.add_argument("-o", "--output_dir", type=str, default=None,
+                        help="Output directory to save segmented audio files")
     parser.add_argument("-dur", "--split_duration", type=float, default =0.5,
                         help="Duration of each segment in seconds")
     parser.add_argument("-ovl", "--overlap", type=float, default=0,
                         help="Overlap between segments in seconds (default: 0)")
-    parser.add_argument("-min", "--minimum_length", type=float, default=3,
+    parser.add_argument("-min", "--minimum_length", type=float, default=2,
                         help="Minimum duration of an utterance from the database, we ignore/discard utterances that are less than that length. (we do not split them)")
     
     return parser.parse_args()
 
-def generate_splits(input_dir, split_dur, overlap, min_utter):
-    out_dir = input_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
+def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger):
+    
+    if output_dir is None:
+        out_dir = input_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
+    else:
+        out_dir = output_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
+        
+    print(out_dir)
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
     
-    speaker_classes = os.listdir()
-    speaker_dirs = []
+    speaker_classes = os.listdir(input_dir)
+    print(speaker_classes)
 
     for speaker in speaker_classes:
-        speaker_dirs.append(os.path.join(input_dir,speaker))
 
-    for speaker_dir in speaker_dirs:
-        
-        out_speaker_dir = os.path.join(out_dir,speaker_dir)
+        speaker_dir = os.path.join(input_dir,speaker)
+        out_speaker_dir = os.path.join(out_dir,speaker)
+
         if not os.path.exists(out_speaker_dir):
             os.mkdir(out_speaker_dir)
         
-        for file in speaker_dir:
+        for file in sorted(os.listdir(speaker_dir)):
             input_filepath = os.path.join(speaker_dir,file)
+            speaker_class = speaker_dir.split("/")[-1]
+            print(input_filepath)
+            y , sr = librosa.load(input_filepath, sr=16000)
+            # Calculate the duration in seconds
+            duration = librosa.get_duration(y=y, sr=sr)
 
+            if duration < min_utter:
+                logger.info(f"File {file} from speaker {speaker_class} is smaller than {min_utter} seconds, having a duration of {duration} seconds. We gonna ignore it")
+                continue
+            else:
+                # Calculate number of frames for each segment
+                frame_len = int(sr * split_dur)
+                frame_overlap = int(frame_len * overlap)
+
+                # Calculate the number of segments
+                num_segments = (len(y) - frame_len) // (frame_len - frame_overlap) +1
+
+                for i in range(num_segments):
+                    
+                    if i == 0:
+                        start_idx = i * frame_len 
+                    else:
+                        start_idx = i * (frame_len - frame_overlap)
+
+                    end_idx = start_idx + frame_len
+                    if end_idx > len(y):
+                        continue
+
+                    # Extract segment
+                    segment = y[start_idx:end_idx]
+
+                    # Save segment
+                    fileid = os.path.splitext(file)[0]
+                    part = str(i).zfill(len(str(abs(num_segments))))
+                    duration_start = start_idx/sr
+
+                    segment_file_path = os.path.join(out_speaker_dir, f"{fileid}_window_{part}.wav")
+                    sf.write(segment_file_path, segment, sr)
+                    logger.info(f"Saved segment from {file} starting at second {duration_start} to {segment_file_path}.")
             
-        
+            
 
 
 if __name__ == "__main__":
     args = parse_arguments()
 
     input_dir = args.input_dir
-    #output_dir = args.output_dir
-    split_dur = args.segment_duration
+    output_dir = args.output_dir
+    split_dur = args.split_duration
     overlap = args.overlap
     min_utter = args.minimum_length
 
-    generate_splits(input_dir, split_dur, overlap, min_utter)
+    logger = setup_logger("split_audios.log")
+
+    generate_splits(input_dir, output_dir,split_dur, overlap, min_utter, logger)
 
