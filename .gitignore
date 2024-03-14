@@ -1,5 +1,6 @@
 # log and data files
 *.model
+*.nemo
 *.pkl
 *.log
 #*.ipynb

@@ -1,0 +1,24 @@
+name: &name "SpeakerIdentificationInfer"
+
+data:
+    enrollment_embs: ???
+    test_embs: ???
+    out_manifest: './infer_output.json'
+    sample_rate: 16000
+    
+n_way: 109
+k_shots: 300000
+n_tasks: 1
+normalize: True
+
+method: "normal"
+backend: "cosine_similarity"
+
+# json manifest line example
+#
+# enrollment_manifest:
+# {"audio_filepath": "/path/to/audio_file", "offset": 0, "duration": null, "label": "<speaker_label>"}
+# 
+# test_manifest:
+# {"audio_filepath": "/path/to/audio_file", "offset": 0, "duration": null, "label": "infer"}
+#

@@ -638,7 +638,8 @@ class EncDecSpeakerLabelModel(ModelPT, ExportableEncDecModel):
             if device == 'cuda':
                 test_batch = [x.to(device) for x in test_batch]
             audio_signal, audio_signal_len, labels, _ = test_batch
-            logit, emb = self.forward(input_signal=audio_signal, input_signal_length=audio_signal_len)
+            with torch.no_grad():
+                logit, emb = self.forward(input_signal=audio_signal, input_signal_length=audio_signal_len)
 
             logits.extend(logit.cpu().numpy())
             gt_labels.extend(labels.cpu().numpy())

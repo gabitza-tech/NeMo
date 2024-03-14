@@ -24,19 +24,20 @@ from nemo.collections.asr.models import EncDecSpeakerLabelModel
 from nemo.collections.asr.parts.features import WaveformFeaturizer
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
+from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
 
 seed_everything(42)
 
 
-@hydra_runner(config_path="conf", config_name="speaker_identification_infer")
+@hydra_runner(config_path="../conf", config_name="speaker_identification_infer")
 def main(cfg):
 
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    enrollment_manifest = cfg.data.enrollment_manifest
-    test_manifest = cfg.data.test_manifest
+    enrollment_manifest = cfg.data.enrollment
+    test_manifest = cfg.data.test
     out_manifest = cfg.data.out_manifest
     sample_rate = cfg.data.sample_rate
 
@@ -63,6 +64,8 @@ def main(cfg):
         # length normalize
         enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
         test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
+        #enroll_embs = embedding_normalize(enroll_embs)
+        #test_embs = embedding_normalize(test_embs)
 
         # reference embedding
         reference_embs = []
@@ -74,6 +77,7 @@ def main(cfg):
 
         reference_embs = np.asarray(reference_embs)
 
+        print(reference_embs.shape)
         scores = np.matmul(test_embs, reference_embs.T)
         matched_labels = scores.argmax(axis=-1)
 

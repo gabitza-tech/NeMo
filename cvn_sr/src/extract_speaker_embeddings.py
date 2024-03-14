@@ -54,7 +54,7 @@ def get_embeddings(speaker_model, manifest_file, batch_size=1, embedding_dir='./
     """
 
     all_embs, _, _, _ = speaker_model.batch_inference(manifest_file, batch_size=batch_size, device=device)
-    all_embs = np.asarray(all_embs)
+    #all_embs = np.asarray(all_embs)
     all_embs = embedding_normalize(all_embs)
     out_embeddings = {}
 

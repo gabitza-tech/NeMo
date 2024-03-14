@@ -1,8 +1,10 @@
 name: &name "SpeakerIdentificationInfer"
 
+load_embs: False
+
 data:
-    enrollment_manifest: ???
-    test_manifest: ???
+    enrollment: ???
+    test: ???
     out_manifest: './infer_output.json'
     sample_rate: 16000
 

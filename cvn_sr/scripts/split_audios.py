@@ -56,6 +56,7 @@ def parse_arguments():
 
 def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger):
     
+    # name the output dir depending on the size of the split, ovl between windows and minimum duration of the audios processed
     if output_dir is None:
         out_dir = input_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
     else:
@@ -68,6 +69,21 @@ def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger
     speaker_classes = os.listdir(input_dir)
     print(speaker_classes)
 
+    """
+    the datasets should have the following structure:
+    class
+    -->file
+    -->file2
+    -->file3
+    ...
+    class2
+    -->file
+    -->file2
+    ...
+
+
+    At output, we save the files in the same structure.
+    """
     for speaker in speaker_classes:
 
         speaker_dir = os.path.join(input_dir,speaker)
@@ -84,6 +100,8 @@ def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger
             # Calculate the duration in seconds
             duration = librosa.get_duration(y=y, sr=sr)
 
+            # we ignore files that are smaller than a minimum duration
+            # example: 2 seconds
             if duration < min_utter:
                 logger.info(f"File {file} from speaker {speaker_class} is smaller than {min_utter} seconds, having a duration of {duration} seconds. We gonna ignore it")
                 continue
@@ -92,7 +110,8 @@ def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger
                 frame_len = int(sr * split_dur)
                 frame_overlap = int(frame_len * overlap)
 
-                # Calculate the number of segments
+                # Calculate the number of segments, 
+                # in order to use zfill to have formats like 01,02,03 to easily sort them
                 num_segments = (len(y) - frame_len) // (frame_len - frame_overlap) +1
 
                 for i in range(num_segments):
@@ -114,6 +133,7 @@ def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger
                     part = str(i).zfill(len(str(abs(num_segments))))
                     duration_start = start_idx/sr
 
+                    # save files with the root being fileid and the rest being the window part
                     segment_file_path = os.path.join(out_speaker_dir, f"{fileid}_window_{part}.wav")
                     sf.write(segment_file_path, segment, sr)
                     logger.info(f"Saved segment from {file} starting at second {duration_start} to {segment_file_path}.")
@@ -130,7 +150,8 @@ if __name__ == "__main__":
     overlap = args.overlap
     min_utter = args.minimum_length
 
-    logger = setup_logger("split_audios.log")
+    log_name = os.path.basename(input_dir)
+    logger = setup_logger(f"{log_name}.log")
 
     generate_splits(input_dir, output_dir,split_dur, overlap, min_utter, logger)
 
