@@ -55,33 +55,24 @@ concat_labels -- class of an audio
 concat_slices -- root name of an audio, ex: p255_01_window_part_4.wav -> p255_01
 concat_patchs -- name of an audio containing the window part too, ex: p255_01_window_part_4.wav -> p255_01_window_part_4
 """
+
 @hydra_runner(config_path="../conf", config_name="speaker_identification_fewshot")
 def main(cfg):
 
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    n_way = cfg.n_way
-    k_shots = cfg.k_shots
-    
     log_name = os.path.basename(cfg.data.enrollment_embs.split("_support")[0].split("manifest_")[1])
     logger = setup_logger(f"{log_name}.log")
 
-    enrollment_embs = cfg.data.enrollment_embs
-    test_embs = cfg.data.test_embs
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    enroll_dict = load_pickle(enrollment_embs)
-    test_dict = load_pickle(test_embs)
+    enroll_dict = load_pickle(cfg.data.enrollment_embs)
+    test_dict = load_pickle(cfg.data.test_embs)
 
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
-    if n_way > len(uniq_classes):
-        n_way = len(uniq_classes)
+    if cfg.n_way > len(uniq_classes):
+        cfg.n_way = len(uniq_classes)
 
-    #uniq_enroll_ids =  sorted(list(set(enroll_dict['concat_slices'])))
-    #uniq_test_ids = sorted(list(set(test_dict['concat_slices'])))
-
-    
     # We want to be able to reproduce the classes selected and the ids selected throughout experiments
     random.seed(42)
     random_numbers = [int(random.uniform(0,10000)) for _ in range(cfg.n_tasks)]
@@ -94,10 +85,10 @@ def main(cfg):
         random.seed(task_seed)
 
         
-        # we sample n_way classes out of the total number of classes
-        sampled_classes = sorted(random.sample(uniq_classes, n_way))
+        # we sample cfg.n_way classes out of the total number of classes
+        sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
         logger.info(f"For task {i}, selected classes are: {sampled_classes}")
-        #enroll_indices = [index for index, element in enumerate(enroll_dict['concat_labels']) if element in sampled_classes]
+        enroll_indices = [index for index, element in enumerate(enroll_dict['concat_labels']) if element in sampled_classes]
         test_indices = [index for index, element in enumerate(test_dict['concat_labels']) if element in sampled_classes]
         
         """
@@ -108,36 +99,32 @@ def main(cfg):
         print("Creating test embeddings vector and the reference labels")
         ref_labels = [test_dict['concat_labels'][index] for index in test_indices] #[label for index,label in enumerate(test_dict['concat_labels']) if index in test_indices]
         test_embs = test_dict['concat_features'][test_indices] #np.asarray([embs for index,embs in enumerate(test_dict['concat_features']) if index in test_indices])
-        test_ids = [test_dict['concat_slices'][index] for index in test_indices]
-
-
-        if cfg.normalize == True:
-            test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
-            #test_embs = embedding_normalize(test_embs)
+        
 
         # We sample the embeddings from k_shot audios in a class
         # If audios are normal, it wil sample exactly k_shot audios per class
-        # If audios are split, it will sample a variable number of window_audios, but still coming from k_shots audios
+        # If audios are split, it will sample a variable number of window_audios, but still coming from k_shot audios
         # We don't oversample embs in a class to equalize the classes lengths, as we calculate the mean anyway
         print("Creating enroll embeddings vector")
         enroll_embs = []
         enroll_labels = []
         max_class_ids = 0
         for label in sampled_classes:
-
-            k_shots = cfg.k_shots
-            uniq_enroll_class_ids = sorted(set([enroll_dict['concat_slices'][index] for index,label_enroll in enumerate(enroll_dict['concat_labels']) if label_enroll == label]))
             
-            if k_shots > len(uniq_enroll_class_ids):
-                k_shots = len(uniq_enroll_class_ids)
+            k_shot = cfg.k_shot
+            uniq_enroll_class_ids = sorted(set([enroll_dict['concat_slices'][index] for index in enroll_indices if enroll_dict["concat_labels"][index] == label]))
             
-            sampled_enroll_class_ids = sorted(random.sample(uniq_enroll_class_ids,k_shots))
+            if k_shot > len(uniq_enroll_class_ids):
+                k_shot = len(uniq_enroll_class_ids)
+            
+            sampled_enroll_class_ids = sorted(random.sample(uniq_enroll_class_ids,k_shot))
             enroll_class_embs = np.asarray([enroll_dict['concat_features'][index] for index, enroll_id in enumerate(enroll_dict['concat_slices']) if enroll_id in sampled_enroll_class_ids])
+            
             if len(enroll_class_embs) > max_class_ids:
                 max_class_ids = len(enroll_class_embs)
+            
             enroll_embs.extend(enroll_class_embs)
-            for _ in range(len(enroll_class_embs)):
-                enroll_labels.append(label)
+            enroll_labels.extend([label]*len(enroll_class_embs))
         
         enroll_embs = np.asarray(enroll_embs)
         enroll_labels = np.asarray(enroll_labels)
@@ -145,6 +132,8 @@ def main(cfg):
         if cfg.normalize == True:
             enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
             #enroll_embs = embedding_normalize(enroll_embs)
+            test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
+            #test_embs = embedding_normalize(test_embs)
 
         print("Calculating the reference embeddings")
         # Create reference embeddings, for each class by calcuating the mean
