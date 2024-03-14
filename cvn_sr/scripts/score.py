@@ -1,11 +1,7 @@
 import sys
 import os
-from collections import Counter
+from utils import majority_element
 
-def majority_element(input_list):
-    counts = Counter(input_list)
-    majority_item = counts.most_common(1)[0][0]
-    return majority_item
 
 def calculate_accuracy(file_path):
     correct_predictions = 0

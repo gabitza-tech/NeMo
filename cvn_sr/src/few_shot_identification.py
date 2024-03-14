@@ -63,7 +63,7 @@ def main(cfg):
 
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
-    log_name = os.path.basename(cfg.data.enrollment_embs.split("_support")[0].split("manifest_")[1])
+    log_name = os.path.basename(cfg.data.enrollment_embs.split("_support")[0].split("manifest_")[1])+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
     logger = setup_logger(f"{log_name}.log")
 
     enroll_dict = load_pickle(cfg.data.enrollment_embs)

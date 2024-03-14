@@ -6,8 +6,8 @@ data:
     sample_rate: 16000
     
 n_way: 109
-k_shot: 300000
-n_tasks: 1
+k_shot: 1
+n_tasks: 10000
 normalize: True
 
 method: "normal"
