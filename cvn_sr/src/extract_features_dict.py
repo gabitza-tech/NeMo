@@ -25,7 +25,6 @@ Args:
     be downloaded from NGC and used to extract embeddings
 --embeddings_dir(optional): path to directory where embeddings need to stored default:'./'
 
-
 """
 
 import json

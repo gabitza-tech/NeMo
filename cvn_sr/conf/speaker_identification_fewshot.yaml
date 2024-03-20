@@ -3,11 +3,12 @@ name: &name "SpeakerIdentificationInfer"
 data:
     enrollment_embs: ???
     test_embs: ???
+    out_file: null
     sample_rate: 16000
     
-n_way: 109
-k_shot: 1
-n_tasks: 10000
+n_way: 1251
+k_shot: 10
+n_tasks: 1
 normalize: True
 
 method: "normal"

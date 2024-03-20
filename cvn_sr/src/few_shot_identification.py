@@ -17,19 +17,18 @@ import json
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from pytorch_lightning import seed_everything
 import os
-from nemo.collections.asr.data.audio_to_label import AudioToSpeechLabelDataset
-from nemo.collections.asr.models import EncDecSpeakerLabelModel
-from nemo.collections.asr.parts.features import WaveformFeaturizer
+
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from scripts.utils import load_pickle
 import random
 import logging
 from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
-
+from scripts.utils import majority_element
 # Set the seed to a fixed value (for reproducibility)
+
+
 
 def setup_logger(log_file):
     # Create a logger
@@ -63,17 +62,27 @@ def main(cfg):
 
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
-    log_name = os.path.basename(cfg.data.enrollment_embs.split("_support")[0].split("manifest_")[1])+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
-    logger = setup_logger(f"{log_name}.log")
+    if cfg.data.out_file is not None:
+        log_name = cfg.data.out_file+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
+    else:
+        log_name = "logger"+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
 
+    logger = setup_logger(f"{log_name}.log")
+    print(cfg.data.test_embs)
     enroll_dict = load_pickle(cfg.data.enrollment_embs)
     test_dict = load_pickle(cfg.data.test_embs)
 
+    print(len(enroll_dict['concat_features']))
+    print(len(test_dict['concat_features']))
+
     # We check how many classes we have in support (closed set problem -> we assume that query classes are part of support classes)
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
+    
     if cfg.n_way > len(uniq_classes):
         cfg.n_way = len(uniq_classes)
-
+    
+    print(f"Number of ways is :{cfg.n_way}")
+    
     # We want to be able to reproduce the classes selected and the ids selected throughout experiments
     # For each task, we have a certain seed => for same enroll, test, k-shot and n-way, we should obtain same results!
     random.seed(42)
@@ -88,11 +97,14 @@ def main(cfg):
 
         # We sample cfg.n_way classes out of the total number of classes
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
-        logger.info(f"For task {i}, selected classes are: {sampled_classes}")
+        logger.info(f"For task {i}, number of classes are {len(sampled_classes)} and selected classes are: {sampled_classes}")
         
         # We find which indices in the lists are part of the sampled classes
         test_indices = [index for index, element in enumerate(test_dict['concat_labels']) if element in sampled_classes]
         enroll_indices = [index for index, element in enumerate(enroll_dict['concat_labels']) if element in sampled_classes]
+        
+        print(f"There are {len(test_indices)} test samples that belong to the sampled classes")
+        print(f"There are {len(enroll_indices)} enroll samples that belong to the sampled classes")
         
         """
         We first construct the test/enroll, as it is easier and we always use all of it, one file at a time
@@ -104,7 +116,7 @@ def main(cfg):
         test_ids = [test_dict['concat_slices'][index] for index in test_indices]
         ref_labels = [test_dict['concat_labels'][index] for index in test_indices] #[label for index,label in enumerate(test_dict['concat_labels']) if index in test_indices]
         
-        
+
         """
         We sample the embeddings from k_shot audios in each sampled class
         If audios are normal, it wil sample exactly k_shot audios per class
@@ -121,15 +133,15 @@ def main(cfg):
             # In case the audios are split, that's not a problem, because it will get the windows too.
             k_shot = cfg.k_shot
             uniq_ids_enroll_class = sorted(set([enroll_dict['concat_slices'][index] for index in enroll_indices if enroll_dict["concat_labels"][index] == label]))
-
+          
             # In case we do not have enough audio files per class, we lower k_shot for this class at the moment            
             if k_shot > len(uniq_ids_enroll_class):
                 k_shot = len(uniq_ids_enroll_class)
             
             # We extract the class embs as the embeddings coming from the sampled audios
             sampled_enroll_class_ids = sorted(random.sample(uniq_ids_enroll_class,k_shot))
-            class_embs = np.asarray([enroll_dict['concat_features'][index] for index, enroll_id in enumerate(enroll_dict['concat_slices']) if enroll_id in sampled_enroll_class_ids])
-            
+            class_embs = np.asarray([enroll_dict['concat_features'][index] for index, enroll_id in enumerate(enroll_dict['concat_slices']) if ((enroll_id in sampled_enroll_class_ids) and (enroll_dict['concat_labels'][index]==label))])
+                      
             # We don't use it yet, as we do not oversample in the case of using windows yet
             if len(class_embs) > max_class_ids:
                 max_class_ids = len(class_embs)
@@ -140,12 +152,13 @@ def main(cfg):
         enroll_embs = np.asarray(enroll_embs)
         enroll_labels = np.asarray(enroll_labels)
 
+
         # Choose to normalize embeddings or not
         if cfg.normalize == True:
-            enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
-            #enroll_embs = embedding_normalize(enroll_embs)
-            test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
-            #test_embs = embedding_normalize(test_embs)
+            #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
+            enroll_embs = embedding_normalize(enroll_embs)
+            #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
+            test_embs = embedding_normalize(test_embs)
 
         print("Calculating the mean class embeddings")
         # Calculate the mean embeddings for each class in the support
@@ -161,17 +174,44 @@ def main(cfg):
         scores = np.matmul(test_embs, avg_enroll_embs.T)
         matched_labels = scores.argmax(axis=-1)
 
+        """
+        Calculate score per audio, it's only one audio per file id in case of normal audios
+        In case of split audios (windows) there are multiple audios per file id, so majority voting must be performed
+        """
+
+        """
+        uniq_test_ids = sorted(list(set(test_ids))) # We go through each audio and get the majority class for it
+        
+        test_results = {}
+        for uniq_id in uniq_test_ids:
+            test_results[uniq_id] = {}
+            ids_indices = [index for index,id1 in enumerate(test_ids) if id1==uniq_id]
+
+            test_results[uniq_id]["ref"] = ref_labels[ids_indices[0]]
+            test_results[uniq_id]["pred"] = sampled_classes[majority_element(matched_labels[ids_indices])]
+
         total_preds = 0
         correct_preds = 0
-        for (i,label) in enumerate(matched_labels):
+        for key in test_results.keys():
+            total_preds += 1
+            if test_results[key]["ref"] == test_results[key]["pred"]:
+                correct_preds += 1
+        """
+        total_preds = 0
+        correct_preds = 0
+        # label in matched_labels is the position of a class in sampled_classes, from argmax
+        # matched_labels and ref_labels have the same size.
+        for (j,label) in enumerate(matched_labels):
             total_preds += 1
             pred_class = sampled_classes[label]
-            if pred_class == ref_labels[i]:
+            if pred_class == ref_labels[j]:
                 correct_preds += 1
-            
+        
         acc = 100*(correct_preds/total_preds)
         task_accs.append(acc)
+        logger.info(f"Accuracy for task {i} is {acc}%.")
 
+ 
     final_acc = sum(task_accs)/len(task_accs)
     logger.info(f"Final accuracy over {cfg.n_tasks} tasks is {final_acc}%.")
 
