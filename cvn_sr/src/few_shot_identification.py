@@ -68,12 +68,10 @@ def main(cfg):
         log_name = "logger"+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
 
     logger = setup_logger(f"{log_name}.log")
-    print(cfg.data.test_embs)
+
     enroll_dict = load_pickle(cfg.data.enrollment_embs)
     test_dict = load_pickle(cfg.data.test_embs)
 
-    print(len(enroll_dict['concat_features']))
-    print(len(test_dict['concat_features']))
 
     # We check how many classes we have in support (closed set problem -> we assume that query classes are part of support classes)
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
@@ -132,16 +130,17 @@ def main(cfg):
             # We get all the uniq audio filenames in the sampled support class (label)
             # In case the audios are split, that's not a problem, because it will get the windows too.
             k_shot = cfg.k_shot
-            uniq_ids_enroll_class = sorted(set([enroll_dict['concat_slices'][index] for index in enroll_indices if enroll_dict["concat_labels"][index] == label]))
-          
+            uniq_ids_enroll_class = sorted(set([enroll_dict['concat_slices'][index] for index in enroll_indices if enroll_dict["concat_labels"][index] == label]))        
+            
             # In case we do not have enough audio files per class, we lower k_shot for this class at the moment            
             if k_shot > len(uniq_ids_enroll_class):
                 k_shot = len(uniq_ids_enroll_class)
             
             # We extract the class embs as the embeddings coming from the sampled audios
             sampled_enroll_class_ids = sorted(random.sample(uniq_ids_enroll_class,k_shot))
+            
             class_embs = np.asarray([enroll_dict['concat_features'][index] for index, enroll_id in enumerate(enroll_dict['concat_slices']) if ((enroll_id in sampled_enroll_class_ids) and (enroll_dict['concat_labels'][index]==label))])
-                      
+            
             # We don't use it yet, as we do not oversample in the case of using windows yet
             if len(class_embs) > max_class_ids:
                 max_class_ids = len(class_embs)
@@ -152,18 +151,20 @@ def main(cfg):
         enroll_embs = np.asarray(enroll_embs)
         enroll_labels = np.asarray(enroll_labels)
 
-
         # Choose to normalize embeddings or not
+
         if cfg.normalize == True:
             #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
             enroll_embs = embedding_normalize(enroll_embs)
             #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
             test_embs = embedding_normalize(test_embs)
 
+
         print("Calculating the mean class embeddings")
         # Calculate the mean embeddings for each class in the support
         avg_enroll_embs = []
         for label in sampled_classes:
+            
             indices = np.where(enroll_labels == label)
             embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
             avg_enroll_embs.append(embedding)
@@ -199,19 +200,31 @@ def main(cfg):
         """
         total_preds = 0
         correct_preds = 0
+
+        class_acc = {}
+        for cls in sampled_classes:
+            class_acc[cls] = {}
+            class_acc[cls]['total_preds'] = 0
+            class_acc[cls]['correct_preds'] = 0
+            class_acc[cls]['preds'] = []
+
         # label in matched_labels is the position of a class in sampled_classes, from argmax
         # matched_labels and ref_labels have the same size.
         for (j,label) in enumerate(matched_labels):
             total_preds += 1
+            class_acc[ref_labels[j]]['total_preds'] +=1
+
             pred_class = sampled_classes[label]
+            class_acc[ref_labels[j]]['preds'].append(pred_class)
+
             if pred_class == ref_labels[j]:
                 correct_preds += 1
-        
+                class_acc[ref_labels[j]]['correct_preds'] +=1
+
         acc = 100*(correct_preds/total_preds)
         task_accs.append(acc)
         logger.info(f"Accuracy for task {i} is {acc}%.")
 
- 
     final_acc = sum(task_accs)/len(task_accs)
     logger.info(f"Final accuracy over {cfg.n_tasks} tasks is {final_acc}%.")
 
