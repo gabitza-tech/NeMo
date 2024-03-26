@@ -95,7 +95,7 @@ def main(cfg):
 
         # We sample cfg.n_way classes out of the total number of classes
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
-        logger.info(f"For task {i}, number of classes are {len(sampled_classes)} and selected classes are: {sampled_classes}")
+        #logger.info(f"For task {i}, number of classes are {len(sampled_classes)} and selected classes are: {sampled_classes}")
         
         # We find which indices in the lists are part of the sampled classes
         test_indices = [index for index, element in enumerate(test_dict['concat_labels']) if element in sampled_classes]
@@ -163,12 +163,13 @@ def main(cfg):
         print("Calculating the mean class embeddings")
         # Calculate the mean embeddings for each class in the support
         avg_enroll_embs = []
+
         for label in sampled_classes:
             
             indices = np.where(enroll_labels == label)
             embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
             avg_enroll_embs.append(embedding)
-
+        
         avg_enroll_embs = np.asarray(avg_enroll_embs)
         
         # Calculate cosine similarity between test embeddings and the transpose of the averaged class embeddings
