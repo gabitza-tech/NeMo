@@ -167,10 +167,18 @@ def main(cfg):
         for label in sampled_classes:
             
             indices = np.where(enroll_labels == label)
-            embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
+            if cfg.method == "normal":
+                embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
+            if cfg.method == "median":
+                embedding = np.median(enroll_embs[indices], axis=0)
+            
+            
+
             avg_enroll_embs.append(embedding)
         
         avg_enroll_embs = np.asarray(avg_enroll_embs)
+
+        print(avg_enroll_embs.shape)
         
         # Calculate cosine similarity between test embeddings and the transpose of the averaged class embeddings
         scores = np.matmul(test_embs, avg_enroll_embs.T)

@@ -214,7 +214,6 @@ def main(cfg):
 
             acc_mean_list.append(acc_sample)
             
-
         avg_acc_task,_ = compute_confidence_interval(acc_mean_list)
 
         logger.info(f"Acc for task {i} is {avg_acc_task}")
