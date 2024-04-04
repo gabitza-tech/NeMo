@@ -12,8 +12,8 @@ backend:
     backend_model: cosine_similarity # supported backends are cosine_similarity and neural_classifier
 
     cosine_similarity:
-        model_path: titanet_large # or path to .nemo file
-        batch_size: 32
+        model_path: 'models/titanet-l.nemo' # or path to .nemo file
+        batch_size: 2
 
     neural_classifier:
         model_path: ??? # path to neural model trained/finetuned with enrollment dataset

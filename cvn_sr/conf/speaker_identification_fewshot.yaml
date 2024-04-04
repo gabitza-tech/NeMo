@@ -7,11 +7,11 @@ data:
     sample_rate: 16000
     
 n_way: 1251
-k_shot: 10
+k_shot: 1
 n_tasks: 1
 normalize: True
 
-method: "normal"
+method: "normal" 
 backend: "cosine_similarity"
 
 # json manifest line example

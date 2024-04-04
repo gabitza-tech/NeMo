@@ -26,7 +26,7 @@ import random
 import logging
 from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
 from scripts.utils import majority_element
-from methods.paddle import PADDLE
+from methods.paddle_old import PADDLE
 from methods.utils import get_log_file,Logger,compute_confidence_interval
 from tqdm import tqdm
 # Set the seed to a fixed value (for reproducibility)
@@ -64,17 +64,21 @@ This script only needs data.enrollment_embs, data.test_embs, n_way, k_shot
 def main(cfg):
 
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
-
+    """
     if cfg.data.out_file is not None:
         log_name = cfg.data.out_file+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
     else:
         log_name = "logger"+"_"+str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
+    """
+    # init logger
+    log_file = get_log_file(log_path=cfg.data.out_file, dataset='voxceleb1',
+                            backbone='ecapa', method='test_'+str(cfg.n_way)+"_"+str(cfg.k_shot))
+    logger_paddle = Logger(__name__, log_file)
 
-    logger = setup_logger(f"{log_name}.log")
+    #logger = setup_logger(f"{log_name}.log")
 
     enroll_dict = load_pickle(cfg.data.enrollment_embs)
     test_dict = load_pickle(cfg.data.test_embs)
-
 
     # We check how many classes we have in support (closed set problem -> we assume that query classes are part of support classes)
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
@@ -90,15 +94,15 @@ def main(cfg):
     random_numbers = [int(random.uniform(0,10000)) for _ in range(cfg.n_tasks)]
 
     task_accs = []
-    for i in range(cfg.n_tasks):
+    for i_task in range(cfg.n_tasks):
         # Randomly select the classes to be analyzed and the files from each class
         # For each task, we use a certain seed
-        task_seed = random_numbers[i]
+        task_seed = random_numbers[i_task]
         random.seed(task_seed)
 
         # We sample cfg.n_way classes out of the total number of classes
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
-        logger.info(f"For task {i}, number of classes are {len(sampled_classes)}")# and selected classes are: {sampled_classes}")
+        logger_paddle.info(f"For task {i_task}, number of classes are {len(sampled_classes)}")# and selected classes are: {sampled_classes}")
         
         # We find which indices in the lists are part of the sampled classes
         test_indices = [index for index, element in enumerate(test_dict['concat_labels']) if element in sampled_classes]
@@ -161,7 +165,7 @@ def main(cfg):
             enroll_embs = embedding_normalize(enroll_embs)
             #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
             test_embs = embedding_normalize(test_embs)
-
+        
         test_labels = np.asarray(ref_labels)
 
         print(test_labels.shape)
@@ -182,11 +186,6 @@ def main(cfg):
         for label in enroll_labels:
             new_enroll_labels.append(label_dict[label])
         new_enroll_labels = np.asarray(new_enroll_labels)
-        
-        # init logger
-        log_file = get_log_file(log_path='test_log', dataset='voxceleb1',
-                                backbone='ecapa', method='paddle')
-        logger = Logger(__name__, log_file)
 
         args={}
         args['iter']=20
@@ -195,12 +194,27 @@ def main(cfg):
         
         acc_mean_list = []
         acc_conf_list = []
-        for j in tqdm(range(test_labels.shape[0])):
-            x_q = torch.tensor([test_embs[j]]).unsqueeze(0)
-            y_q = torch.tensor([new_test_labels[j]]).long().unsqueeze(0).unsqueeze(2)
+        batch_size = 32
+        for j in tqdm(range(0,test_labels.shape[0],batch_size)):
+        #for j in tqdm(range(test_labels.shape[0])):
+            end = j+batch_size
+            if end>test_labels.shape[0]-1:
+                end = test_labels.shape[0]-1
 
-            x_s = torch.tensor(enroll_embs).unsqueeze(0)
-            y_s = torch.tensor(new_enroll_labels).long().unsqueeze(0).unsqueeze(2)
+            len_batch = end - j
+
+            #x_q = torch.tensor([test_embs[j]]).unsqueeze(0)
+            x_q = torch.tensor(test_embs[j:end]).unsqueeze(1)
+
+            #y_q = torch.tensor([new_test_labels[j]]).long().unsqueeze(0).unsqueeze(2)
+            y_q = torch.tensor([new_test_labels[j:end]]).long().view(-1,1).unsqueeze(2)
+            
+
+            #x_s = torch.tensor(enroll_embs).unsqueeze(0)
+            x_s = torch.tensor(enroll_embs).unsqueeze(0).repeat(len_batch,1,1)
+            
+            #y_s = torch.tensor(new_enroll_labels).long().unsqueeze(0).unsqueeze(2)
+            y_s = torch.tensor(new_enroll_labels).long().unsqueeze(0).unsqueeze(2).repeat(len_batch,1,1)
 
             task_dic = {}
             task_dic['y_s'] = y_s
@@ -212,16 +226,17 @@ def main(cfg):
             logs = method.run_task(task_dic,cfg.k_shot)
             acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
 
+            # Mean accuracy per batch
             acc_mean_list.append(acc_sample)
             
         avg_acc_task,_ = compute_confidence_interval(acc_mean_list)
 
-        logger.info(f"Acc for task {i} is {avg_acc_task}")
+        logger_paddle.info(f"Acc for task {i_task} is {avg_acc_task}")
         task_accs.append(avg_acc_task)
         print(avg_acc_task)
     
     final_avg_acc,final_conf_score = compute_confidence_interval(task_accs)
-    logger.info(f"Final Acc for task {i} is {avg_acc_task} and confidence interval:{final_conf_score}")
+    logger_paddle.info(f"Final Acc for all tasks is {final_avg_acc} and confidence interval:{final_conf_score}")
 
 
 if __name__ == '__main__':
