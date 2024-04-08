@@ -11,8 +11,8 @@ k_shot: 1
 n_tasks: 1
 normalize: True
 
-method: "normal"
-backend: "cosine_similarity"
+alpha: 1
+iter: 20
 
 # json manifest line example
 #

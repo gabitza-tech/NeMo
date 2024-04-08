@@ -14,7 +14,8 @@ out_file=$4
 out_file2=$5
 
 # Define combinations for n-way, k-shot, and n-tasks
-k_shot_values=(1 3 5 10 30 36 44 60 70 80 90 97 300)  # Example values for k-shot
+k_shot_values=(10 30 36 44 60 70 80 90 97 300)  # Example values for k-shot
+k_shot_values2=(1 3 5 10 30 36 44 60 70 80 90 97 300)  # Example values for k-shot
 
 # Loop over combinations of parameters
 for n_way_val in "${n_way_values[@]}"; do
@@ -34,7 +35,7 @@ done
 
 # Loop over combinations of parameters
 for n_way_val in "${n_way_values[@]}"; do
-    for k_shot_val in "${k_shot_values[@]}"; do
+    for k_shot_val in "${k_shot_values2[@]}"; do
         if [ "$k_shot_val" -le 10 ]; then
             no_tasks_val=10000
         else

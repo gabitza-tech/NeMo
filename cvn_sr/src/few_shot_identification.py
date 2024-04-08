@@ -20,15 +20,12 @@ from omegaconf import OmegaConf
 import os
 
 from nemo.core.config import hydra_runner
-from nemo.utils import logging
-from scripts.utils import load_pickle
 import random
 import logging
 from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
-from scripts.utils import majority_element
-# Set the seed to a fixed value (for reproducibility)
 import time
-from utils.utils import sampler_query,sampler_support, simpleshot, compute_acc
+from utils.utils import load_pickle, sampler_query,sampler_support, compute_acc
+from methods.methods import simpleshot
 
 def setup_logger(log_file):
     # Create a logger

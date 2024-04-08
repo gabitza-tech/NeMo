@@ -1,6 +1,21 @@
 import os
 import numpy as np
+import pickle
+from collections import Counter
 
+def majority_element(input_list):
+    counts = Counter(input_list)
+    majority_item = counts.most_common(1)[0][0]
+    return majority_item
+
+def save_pickle(file, data):
+    with open(file, 'wb') as f:
+        pickle.dump(data, f)
+
+def load_pickle(file):
+    with open(file, 'rb') as f:
+        return pickle.load(f)
+    
 def sampler_query(test_dict,sampled_classes):
     # We find which indices in the lists are part of the sampled classes
     test_indices = [index for index, element in enumerate(test_dict['concat_labels']) if element in sampled_classes]
@@ -49,30 +64,6 @@ def sampler_support(enroll_dict, sampled_classes,k_shot):
 
     return enroll_embs, enroll_labels
 
-def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"):
-
-    print("Using SimpleShot method")
-    # Calculate the mean embeddings for each class in the support
-    avg_enroll_embs = []
-
-    for label in sampled_classes:
-        
-        indices = np.where(enroll_labels == label)
-        if method == "normal":
-            embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
-        if method == "median":
-            embedding = np.median(enroll_embs[indices], axis=0)
-
-        avg_enroll_embs.append(embedding)
-    
-    avg_enroll_embs = np.asarray(avg_enroll_embs)
-    
-    # Calculate cosine similarity between test embeddings and the transpose of the averaged class embeddings
-    scores = np.matmul(test_embs, avg_enroll_embs.T)
-    matched_labels = scores.argmax(axis=-1)
-    pred_labels = [sampled_classes[label] for label in matched_labels]
-
-    return pred_labels
 
 def compute_acc(pred_labels,test_labels,sampled_classes):
     total_preds = 0
