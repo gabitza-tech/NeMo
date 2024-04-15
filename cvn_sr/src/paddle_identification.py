@@ -44,7 +44,12 @@ def main(cfg):
     logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
     # init logger
-    log_file = get_log_file(log_path="logs_paddle", backbone='ecapa', dataset='voxceleb1', method='paddle')
+    if cfg.data.out_file is None:
+        method = str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
+    else: 
+        method = cfg.data.out_file + "_" + str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
+        
+    log_file = get_log_file(log_path="logs_paddle", backbone='ecapa', dataset='voxceleb1', method=method)
     logger = Logger(__name__, log_file)
 
     # Load embeddings and labels dictionaries for enrollment and test
@@ -82,11 +87,7 @@ def main(cfg):
         print(test_embs.shape)
         enroll_embs, enroll_labels = sampler_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
         print(enroll_embs.shape)
-             
-        sampling_support_time = time.time()
-        sampling_support_duration = sampling_support_time - task_start_time
-        print(f"Time taken to extract enroll samples is {sampling_support_duration} s")
-        
+                    
         # Choose to normalize embeddings or not
         if cfg.normalize == True:
             #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
@@ -106,7 +107,10 @@ def main(cfg):
                                   sampled_classes,
                                   cfg.k_shot,
                                   method_info)
-        print(avg_acc_task)
+        
+        logger.info(f"Accuracy for task {i} is {avg_acc_task}%.")
+        computing_duration = time.time() - task_start_time
+        print(f"Time taken by task {i} is {computing_duration} s")
         task_accs.append(avg_acc_task)
         
     final_avg_acc,final_conf_score = compute_confidence_interval(task_accs)

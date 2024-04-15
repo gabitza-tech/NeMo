@@ -102,10 +102,6 @@ def main(cfg):
         print(test_embs.shape)
         enroll_embs, enroll_labels = sampler_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
         print(enroll_embs.shape)
-             
-        sampling_support_time = time.time()
-        sampling_support_duration = sampling_support_time - task_start_time
-        print(f"Time taken to extract enroll samples is {sampling_support_duration} s")
         
         # Choose to normalize embeddings or not
         if cfg.normalize == True:

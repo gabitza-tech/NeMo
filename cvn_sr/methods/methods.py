@@ -48,7 +48,14 @@ def run_paddle(enroll_embs,enroll_labels,test_embs,test_labels,sampled_classes,k
     acc_mean_list = []
     acc_conf_list = []
 
-    query_batch = 128
+    if k_shot == 1:
+        query_batch = 512
+    elif k_shot == 3:
+        query_batch = 256
+    elif k_shot == 5:
+        query_batch = 128
+    else: # k_shot == 10
+        query_batch = 50
     
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
     #for j in tqdm(range(test_labels.shape[0])):
@@ -79,8 +86,9 @@ def run_paddle(enroll_embs,enroll_labels,test_embs,test_labels,sampled_classes,k
         acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
 
         # Mean accuracy per batch
-        acc_mean_list.append(acc_sample)
+        print(acc_sample)
+        acc_mean_list.append(acc_sample*len_batch)
         
-    avg_acc_task,_ = compute_confidence_interval(acc_mean_list)
+    avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
 
     return avg_acc_task
