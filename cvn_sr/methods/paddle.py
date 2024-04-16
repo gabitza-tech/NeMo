@@ -66,7 +66,12 @@ class KM(object):
         """
         preds_q = self.u.argmax(2)
         accuracy = (preds_q == y_q).float().mean(1, keepdim=True)
+        #if 0 in accuracy:
+        #    print(preds_q)
+        #    print(y_q)
+        #    print(accuracy)
         self.test_acc.append(accuracy)
+
 
     def get_logs(self):
 
@@ -88,16 +93,11 @@ class KM(object):
         support = task_dic['x_s']           # [n_task, shot, feature_dim]
         query = task_dic['x_q']             # [n_task, n_query, feature_dim]
 
-        
         # Transfer tensors to GPU if needed
         support = support.to(self.device)  
         query = query.to(self.device)  
         y_s = y_s.long().squeeze(2).to(self.device)
         y_q = y_q.long().squeeze(2).to(self.device)
-
-        # Perform normalizations
-        #scaler = MinMaxScaler(feature_range=(0, 1))
-        #query, support = scaler(query, support)
 
         # Run adaptation
         self.run_method(support=support, query=query, y_s=y_s, y_q=y_q)
