@@ -15,7 +15,7 @@ def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"
         
         indices = np.where(enroll_labels == label)
         if method == "normal":
-            embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices)
+            embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices[0])
         if method == "median":
             embedding = np.median(enroll_embs[indices], axis=0)
 
@@ -26,8 +26,6 @@ def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"
     # Calculate cosine similarity between test embeddings and the transpose of the averaged class embeddings
     scores = np.matmul(test_embs, avg_enroll_embs.T)
     pred_labels = scores.argmax(axis=-1)
-
-    #pred_labels = [sampled_classes[label] for label in matched_labels]
 
     return pred_labels
 
@@ -131,7 +129,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
     else: 
         query_batch = 50
     """  
-    query_batch = 512
+    query_batch = 32
     acc_mean_list = []
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
         
