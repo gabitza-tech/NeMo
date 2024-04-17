@@ -28,7 +28,7 @@ def sampler_query(test_dict,sampled_classes):
     test_embs = test_dict['concat_features'][test_indices] 
 
     label_dict = {label:i for i,label in enumerate(sampled_classes)}
-    test_labels = np.asarray([test_dict['concat_labels'][index] for index in test_indices])
+    test_labels = np.asarray(test_dict['concat_labels'])[test_indices]
     test_labels = np.asarray([label_dict[label] for label in test_labels])
 
     return test_embs, test_labels
@@ -157,7 +157,7 @@ def compute_acc(pred_labels,test_labels,sampled_classes):
     correct_preds = 0
 
     class_acc = {}
-    for cls in sampled_classes:
+    for cls in range(len(sampled_classes)):
         class_acc[cls] = {}
         class_acc[cls]['total_preds'] = 0
         class_acc[cls]['correct_preds'] = 0

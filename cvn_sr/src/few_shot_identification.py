@@ -109,11 +109,11 @@ def main(cfg):
             enroll_embs = embedding_normalize(enroll_embs)
             #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
             test_embs = embedding_normalize(test_embs)
-
-        pred_labels = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, method=cfg.method)
-
-        acc = compute_acc(test_labels,pred_labels,sampled_classes)
         
+        
+        pred_labels = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, method=cfg.method)
+        acc = compute_acc(test_labels,pred_labels,sampled_classes)
+
         task_accs.append(acc)
         logger.info(f"Accuracy for task {i} is {acc}%.")
         computing_duration = time.time() - task_start_time
