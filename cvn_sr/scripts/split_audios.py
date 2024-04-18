@@ -139,6 +139,72 @@ def generate_splits(input_dir, output_dir, split_dur, overlap, min_utter, logger
                     logger.info(f"Saved segment from {file} starting at second {duration_start} to {segment_file_path}.")
             
             
+def generate_splits_voxceleb1(input_dir, output_dir, split_dur, overlap, min_utter, logger):
+    
+    # name the output dir depending on the size of the split, ovl between windows and minimum duration of the audios processed
+    if output_dir is None:
+        out_dir = input_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
+    else:
+        out_dir = output_dir + "_dur_" + str(split_dur) + "_ovl_" + str(overlap) + "_min_" + str(min_utter)
+        
+    print(out_dir)
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+    
+    for root,dirs,files in sorted(os.walk(args.input_dir, topdown=True)):
+        if root != args.input_dir:
+            out_root = out_dir + root.split(args.input_dir)[1]
+        else:
+            out_root = out_dir
+        if len(dirs) != 0:
+            for dir in dirs:
+                print(os.path.join(out_root,dir))
+                if not os.path.exists(os.path.join(out_root,dir)):
+                    os.mkdir(os.path.join(out_root,dir))
+        if len(files) != 0:
+            for file in files:
+                input_filepath = os.path.join(root,file)
+                y , sr = librosa.load(input_filepath, sr=16000)
+                # Calculate the duration in seconds
+                duration = librosa.get_duration(y=y, sr=sr)
+
+                # we ignore files that are smaller than a minimum duration
+                # example: 2 seconds
+                if duration < min_utter:
+                    logger.info(f"File {input_filepath} is smaller than {min_utter} seconds, having a duration of {duration} seconds. We gonna ignore it")
+                    continue
+                else:
+                    # Calculate number of frames for each segment
+                    frame_len = int(sr * split_dur)
+                    frame_overlap = int(frame_len * overlap)
+
+                    # Calculate the number of segments, 
+                    # in order to use zfill to have formats like 01,02,03 to easily sort them
+                    num_segments = (len(y) - frame_len) // (frame_len - frame_overlap) +1
+
+                    for i in range(num_segments):
+                        
+                        if i == 0:
+                            start_idx = i * frame_len 
+                        else:
+                            start_idx = i * (frame_len - frame_overlap)
+
+                        end_idx = start_idx + frame_len
+                        if end_idx > len(y):
+                            continue
+
+                        # Extract segment
+                        segment = y[start_idx:end_idx]
+
+                        # Save segment
+                        fileid = os.path.splitext(file)[0]
+                        part = str(i).zfill(len(str(abs(num_segments))))
+                        duration_start = start_idx/sr
+
+                        # save files with the root being fileid and the rest being the window part
+                        segment_file_path = os.path.join(out_root, f"{fileid}_window_{part}.wav")
+                        sf.write(segment_file_path, segment, sr)
+                        logger.info(f"Saved segment from {file} starting at second {duration_start} to {segment_file_path}.")
 
 
 if __name__ == "__main__":
@@ -153,5 +219,5 @@ if __name__ == "__main__":
     log_name = os.path.basename(input_dir)
     logger = setup_logger(f"{log_name}.log")
 
-    generate_splits(input_dir, output_dir,split_dur, overlap, min_utter, logger)
+    generate_splits_voxceleb1(input_dir, output_dir,split_dur, overlap, min_utter, logger)
 
