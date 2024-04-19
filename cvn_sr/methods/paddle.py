@@ -1,5 +1,5 @@
 import torch.nn.functional as F
-from utils.paddle_utils import get_one_hot, Logger
+from utils.paddle_utils import get_one_hot, Logger, most_common_value
 from tqdm import tqdm
 import torch
 import time
@@ -12,6 +12,10 @@ class KM(object):
         self.device = device
         self.iter = args['iter']
         self.alpha = args['alpha']
+        if 'maj_vote' in args.keys():
+            self.maj_vote = args['maj_vote']
+        else:
+            self.maj_vote = False
         
         self.log_file = log_file
         self.logger = Logger(__name__, self.log_file)
@@ -65,7 +69,13 @@ class KM(object):
             y_q : torch.Tensor of shape [n_task, n_query] :
         """
         preds_q = self.u.argmax(2)
-        accuracy = (preds_q == y_q).float().mean(1, keepdim=True)
+        if self.maj_vote:
+            preds_q_maj = torch.tensor([[most_common_value(vector)] for vector in preds_q])
+            y_q_maj = torch.tensor([[most_common_value(vector)] for vector in y_q])
+            accuracy = (preds_q_maj == y_q_maj).float().mean(1, keepdim=True)
+        else:
+            accuracy = (preds_q == y_q).float().mean(1, keepdim=True)
+            
         #if 0 in accuracy:
         #    print(preds_q)
         #    print(y_q)

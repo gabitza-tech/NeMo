@@ -106,6 +106,7 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     #print(enroll_dict['concat_features'].shape)
     #print(enroll_dict['concat_slices'].shape)
 
+    print(len(sampled_classes))
     enroll_label_indices = [index for index, element in enumerate(enroll_dict['concat_labels']) if element in sampled_classes]
 
     all_labels = np.asarray(enroll_dict['concat_labels'])[enroll_label_indices]
@@ -117,8 +118,7 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     random_pairs = [(label, np.random.choice(unique_pairs[unique_pairs[:, 0] == label, 1], size=k_shot, replace=False)) for label in sorted(sampled_classes)]
     random_pairs_array = np.concatenate([[[label, id_] for id_ in ids] for label, ids in random_pairs])
 
-    mask = np.isin(combined_array, random_pairs_array)
-    enroll_indices = np.where(mask.all(axis=1))[0]
+    enroll_indices = np.array(find_matching_positions(combined_array, random_pairs_array))
 
     enroll_embs = enroll_dict['concat_features'][enroll_indices]
     
@@ -126,7 +126,10 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     enroll_labels = np.asarray(enroll_dict['concat_labels'])[enroll_indices]
     enroll_labels = np.asarray([label_dict[label] for label in enroll_labels])
 
-    return enroll_embs, enroll_labels
+    #enroll_slices = np.asarray(enroll_dict['concat_slices'])[enroll_indices]
+    #enroll_patchs = np.asarray(enroll_dict['concat_patchs'])[enroll_indices]
+
+    return enroll_embs, enroll_labels#, enroll_slices,enroll_patchs
 
 def embedding_normalize(embs, use_std=False, eps=1e-10):
     """
@@ -151,6 +154,11 @@ def embedding_normalize(embs, use_std=False, eps=1e-10):
         embs = embs.reshape(initial_shape)
 
     return embs
+
+def find_matching_positions(list1, list2):
+    set_list2 = set(map(tuple, list2))
+    matching_positions = [i for i, vector in enumerate(list1) if tuple(vector) in set_list2]
+    return matching_positions
 
 def compute_acc(pred_labels,test_labels,sampled_classes):
     total_preds = 0

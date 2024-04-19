@@ -33,8 +33,7 @@ concat_features -- features extracted from an audio
 concat_labels -- class of an audio
 concat_slices -- root name of an audio, ex: p255_01_window_part_4.wav -> p255_01
 concat_patchs -- name of an audio containing the window part too, ex: p255_01_window_part_4.wav -> p255_01_window_part_4
-"""
-"""
+
 This script only needs data.enrollment_embs, data.test_embs, n_way, k_shot
 """
 @hydra_runner(config_path="../conf", config_name="paddle_identification_fewshot.yaml")
@@ -83,9 +82,9 @@ def main(cfg):
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
 
         test_embs,test_labels  = sampler_windows_query(test_dict, sampled_classes)
-        print(f"Output sampler shape for test embeddings: {test_embs.shape}")
+        print(f"Output sampler shape for test embeddings: {test_embs.shape},{test_labels.shape}")
         enroll_embs, enroll_labels = sampler_windows_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
-        print(f"Output sampler shape for enroll embeddings: {enroll_embs.shape}")
+        print(f"Output sampler shape for enroll embeddings: {enroll_embs.shape}, {enroll_labels.shape}")
 
         duration_sampling = time.time() - task_start_time     
         print(duration_sampling)
@@ -100,7 +99,8 @@ def main(cfg):
         args={}
         args['iter']=20
         args['alpha']=1
-        method_info = {'device':'cuda:0','log_file':log_file,'args':args}
+        args['maj_vote'] = True
+        method_info = {'device':'cpu','log_file':log_file,'args':args}
         
         avg_acc_task = run_paddle_transductive(enroll_embs,
                                   enroll_labels,

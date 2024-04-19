@@ -14,6 +14,10 @@ import logging
 import copy
 import requests
 
+def most_common_value(tensor):
+    values, counts = torch.unique(tensor, return_counts=True)
+    max_count_index = counts.argmax()
+    return values[max_count_index]
 
 def get_one_hot(y_s):
     n_ways = torch.unique(y_s).size(0)
