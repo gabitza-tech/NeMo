@@ -22,18 +22,20 @@ import os
 from nemo.core.config import hydra_runner
 import random
 import logging
+from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
 from tqdm import tqdm
 import time
-from utils.utils import load_pickle, sampler_windows_query, sampler_windows_support, embedding_normalize
+from utils.utils import load_pickle, sampler_query,sampler_support
 from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
-from methods.methods import run_paddle_transductive, run_paddle
+from methods.methods import run_tim 
 
 """
 concat_features -- features extracted from an audio
 concat_labels -- class of an audio
 concat_slices -- root name of an audio, ex: p255_01_window_part_4.wav -> p255_01
 concat_patchs -- name of an audio containing the window part too, ex: p255_01_window_part_4.wav -> p255_01_window_part_4
-
+"""
+"""
 This script only needs data.enrollment_embs, data.test_embs, n_way, k_shot
 """
 @hydra_runner(config_path="../conf", config_name="paddle_identification_fewshot.yaml")
@@ -47,7 +49,7 @@ def main(cfg):
     else: 
         method = cfg.data.out_file + "_" + str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
         
-    log_file = get_log_file(log_path="logs_paddle_windows", backbone='ecapa', dataset='voxceleb1', method=method)
+    log_file = get_log_file(log_path="logs_tim", backbone='ecapa', dataset='voxceleb1', method=method)
     logger = Logger(__name__, log_file)
 
     # Load embeddings and labels dictionaries for enrollment and test
@@ -81,14 +83,11 @@ def main(cfg):
         # We sample cfg.n_way classes out of the total number of classes
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
 
-        test_embs,test_labels  = sampler_windows_query(test_dict, sampled_classes)
-        print(f"Output sampler shape for test embeddings: {test_embs.shape},{test_labels.shape}")
-        enroll_embs, enroll_labels = sampler_windows_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
-        print(f"Output sampler shape for enroll embeddings: {enroll_embs.shape}, {enroll_labels.shape}")
-
-        duration_sampling = time.time() - task_start_time     
-        print(duration_sampling)
-
+        test_embs,test_labels = sampler_query(test_dict, sampled_classes)
+        print(test_embs.shape)
+        enroll_embs, enroll_labels = sampler_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
+        print(enroll_embs.shape)
+                    
         # Choose to normalize embeddings or not
         if cfg.normalize == True:
             #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
@@ -97,20 +96,17 @@ def main(cfg):
             test_embs = embedding_normalize(test_embs)
 
         args={}
-        args['iter']=20
-        args['alpha']=test_embs.shape[1]
-        print(f"Alpha is equal to {args['alpha']}.")
-        args['maj_vote'] = True
-        method_info = {'device':'cuda','log_file':log_file,'args':args}
-        
-        avg_acc_task = run_paddle_transductive(enroll_embs,
+        args['iter']=10
+        args['alpha']=1
+        method_info = {'device':'cpu','log_file':log_file,'args':args}
+      
+        avg_acc_task = run_tim(enroll_embs,
                                   enroll_labels,
                                   test_embs,
                                   test_labels,
                                   cfg.k_shot,
-                                  method_info,
-                                  cfg.batch_size)
-
+                                  method_info)
+        
         logger.info(f"Accuracy for task {i} is {avg_acc_task}%.")
         computing_duration = time.time() - task_start_time
         print(f"Time taken by task {i} is {computing_duration} s")

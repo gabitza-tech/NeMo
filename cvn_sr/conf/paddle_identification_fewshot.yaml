@@ -10,6 +10,7 @@ n_way: 1251
 k_shot: 1
 n_tasks: 1
 normalize: True
+batch_size: 4
 
 alpha: 1
 iter: 20

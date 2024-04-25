@@ -4,6 +4,7 @@ from tqdm import tqdm
 import torch
 from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
 from methods.paddle import PADDLE
+from methods.tim import ALPHA_TIM, TIM_GD
 
 def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"):
 
@@ -93,7 +94,7 @@ def run_paddle(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_inf
 
     return avg_acc_task
 
-def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
+def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info, batch_size):
     """
     This function predicts using the PADDLE algorithm over a SINGLE TASK. 
     We can also iterate over the query with a batch_size! 
@@ -115,10 +116,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
     RETURN:
     avg_acc_task: average accuracy over the task
     """
-    #label_dict = {label:i for i,label in enumerate(sampled_classes)}
-    #new_test_labels = np.asarray([label_dict[label] for label in test_labels])
-    #new_enroll_labels = np.asarray([label_dict[label] for label in enroll_labels])
-   
+
     """
     if k_shot == 1:
         query_batch = 512
@@ -129,7 +127,8 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
     else: 
         query_batch = 50
     """  
-    query_batch = 32
+    print(batch_size)
+    query_batch = int(batch_size)
     acc_mean_list = []
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
         
@@ -162,5 +161,69 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         
     avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
     
+    return avg_acc_task
+
+def run_tim(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
+    """
+    label_dict = {}
+    for i,label in enumerate(sampled_classes):
+        label_dict[label]=i
+    
+    new_test_labels = []
+    for label in test_labels:
+        new_test_labels.append(label_dict[label])
+    new_test_labels = np.asarray(new_test_labels)
+
+    new_enroll_labels = []
+    for label in enroll_labels:
+        new_enroll_labels.append(label_dict[label])
+    new_enroll_labels = np.asarray(new_enroll_labels)
+    """
+    acc_mean_list = []
+    acc_conf_list = []
+
+    if k_shot == 1:
+        query_batch = 512
+    elif k_shot == 3:
+        query_batch = 256
+    elif k_shot == 5:
+        query_batch = 128
+    else: # k_shot == 10
+        query_batch = 50
+    
+    query_batch = 128
+    for j in tqdm(range(0,test_labels.shape[0],query_batch)):
+    #for j in tqdm(range(test_labels.shape[0])):
+        
+        end = j+query_batch
+        if end>test_labels.shape[0]-1:
+            end = test_labels.shape[0]-1
+
+        len_batch = end - j
+
+        #x_q = torch.tensor([test_embs[j]]).unsqueeze(0)
+        x_q = torch.tensor(test_embs[j:end]).unsqueeze(1)
+        #y_q = torch.tensor([new_test_labels[j]]).long().unsqueeze(0).unsqueeze(2)
+        y_q = torch.tensor([test_labels[j:end]]).long().view(-1,1).unsqueeze(2)
+        #x_s = torch.tensor(enroll_embs).unsqueeze(0)
+        x_s = torch.tensor(enroll_embs).unsqueeze(0).repeat(len_batch,1,1)
+        #y_s = torch.tensor(new_enroll_labels).long().unsqueeze(0).unsqueeze(2)
+        y_s = torch.tensor(enroll_labels).long().unsqueeze(0).unsqueeze(2).repeat(len_batch,1,1)
+
+        task_dic = {}
+        task_dic['y_s'] = y_s
+        task_dic['y_q'] = y_q
+        task_dic['x_s'] = x_s
+        task_dic['x_q'] = x_q
+
+        method = ALPHA_TIM(**method_info)
+        logs = method.run_task(task_dic)
+        acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
+
+        # Mean accuracy per batch
+        print(acc_sample)
+        acc_mean_list.append(acc_sample*len_batch)
+        
+    avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
 
     return avg_acc_task

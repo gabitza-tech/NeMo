@@ -106,7 +106,6 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     #print(enroll_dict['concat_features'].shape)
     #print(enroll_dict['concat_slices'].shape)
 
-    print(len(sampled_classes))
     enroll_label_indices = [index for index, element in enumerate(enroll_dict['concat_labels']) if element in sampled_classes]
 
     all_labels = np.asarray(enroll_dict['concat_labels'])[enroll_label_indices]
