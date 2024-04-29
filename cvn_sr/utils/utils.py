@@ -46,12 +46,13 @@ def sampler_windows_query(test_dict,sampled_classes):
 
     all_labels = np.asarray(test_dict['concat_labels'])[test_label_indices]
     all_slices = np.asarray(test_dict['concat_slices'])[test_label_indices]
+    all_embs = np.asarray(test_dict['concat_features'])[test_label_indices]
 
     combined_array = np.column_stack((all_labels, all_slices))
     unique_pairs, inverse_indices = np.unique(combined_array, axis=0, return_inverse=True)
     grouped_indices = [np.where(inverse_indices == i)[0] for i in range(len(unique_pairs))]
 
-    test_embs = np.asarray([test_dict['concat_features'][indices] for indices in grouped_indices])
+    test_embs = np.asarray([all_embs[indices] for indices in grouped_indices])
 
     label_dict = {label:i for i,label in enumerate(sampled_classes)}
     test_labels = np.asarray([all_labels[indices[0]] for indices in grouped_indices])
@@ -110,6 +111,8 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
 
     all_labels = np.asarray(enroll_dict['concat_labels'])[enroll_label_indices]
     all_slices = np.asarray(enroll_dict['concat_slices'])[enroll_label_indices]
+    all_patchs = np.asarray(enroll_dict['concat_patchs'])[enroll_label_indices]
+    all_embs = np.asarray(enroll_dict['concat_features'])[enroll_label_indices]
 
     combined_array = np.column_stack((all_labels, all_slices))
     unique_pairs, inverse_indices = np.unique(combined_array, axis=0, return_inverse=True)
@@ -119,14 +122,15 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
 
     enroll_indices = np.array(find_matching_positions(combined_array, random_pairs_array))
 
-    enroll_embs = enroll_dict['concat_features'][enroll_indices]
+    
+    enroll_embs = all_embs[enroll_indices]
     
     label_dict = {label:i for i,label in enumerate(sampled_classes)}
-    enroll_labels = np.asarray(enroll_dict['concat_labels'])[enroll_indices]
+    enroll_labels = all_labels[enroll_indices]
     enroll_labels = np.asarray([label_dict[label] for label in enroll_labels])
 
-    #enroll_slices = np.asarray(enroll_dict['concat_slices'])[enroll_indices]
-    #enroll_patchs = np.asarray(enroll_dict['concat_patchs'])[enroll_indices]
+    #enroll_slices = all_slices[enroll_indices]
+    #enroll_patchs = all_patchs[enroll_indices]
 
     return enroll_embs, enroll_labels#, enroll_slices,enroll_patchs
 

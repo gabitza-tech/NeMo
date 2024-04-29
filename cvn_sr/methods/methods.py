@@ -127,7 +127,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
     else: 
         query_batch = 50
     """  
-    print(batch_size)
+
     query_batch = int(batch_size)
     acc_mean_list = []
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
@@ -135,6 +135,9 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         end = j+query_batch
         if end>test_labels.shape[0]-1:
             end = test_labels.shape[0]-1
+        if end == j:
+            end = j+1
+
         len_batch = end - j
 
         x_q = torch.tensor(test_embs[j:end])
@@ -147,7 +150,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         task_dic['y_q'] = y_q
         task_dic['x_s'] = x_s
         task_dic['x_q'] = x_q
-
+    
         method = PADDLE(**method_info)
         logs = method.run_task(task_dic)
         acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
