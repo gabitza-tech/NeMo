@@ -165,6 +165,7 @@ class PADDLE(KM):
         logits = self.get_logits(query).detach()
         self.u = (logits + self.alpha * self.A_adj(self.v, n_query)).softmax(2)
 
+
     def v_update(self):
         """
         updates:
@@ -208,7 +209,7 @@ class PADDLE(KM):
         
         y_s_one_hot = get_one_hot(y_s)
         n_task, n_ways = y_s_one_hot.size(0), y_s_one_hot.size(2)
-
+        
         self.init_w(support=support, y_s=y_s)                           # initialize basic prototypes
         self.v = torch.zeros(n_task, n_ways).to(self.device)            # initialize v to vector of zeros
 

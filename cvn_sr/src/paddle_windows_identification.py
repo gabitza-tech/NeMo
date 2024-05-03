@@ -26,7 +26,7 @@ from tqdm import tqdm
 import time
 from utils.utils import load_pickle, sampler_windows_query, sampler_windows_support, embedding_normalize
 from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
-from methods.methods import run_paddle_transductive, run_paddle
+from methods.methods import run_algo_transductive, run_paddle_transductive, run_paddle
 
 """
 concat_features -- features extracted from an audio
@@ -47,7 +47,7 @@ def main(cfg):
     else: 
         method = cfg.data.out_file + "_" + str(cfg.n_way)+"_"+str(cfg.k_shot)+"_"+str(cfg.n_tasks)
         
-    log_file = get_log_file(log_path="logs_paddle_windows", backbone='ecapa', dataset='voxceleb1', method=method)
+    log_file = get_log_file(log_path="logs_trans_windows", backbone='ecapa', dataset='voxceleb1', method=method)
     logger = Logger(__name__, log_file)
 
     # Load embeddings and labels dictionaries for enrollment and test
@@ -102,7 +102,7 @@ def main(cfg):
         print(f"Alpha is equal to {args['alpha']}.")
         args['maj_vote'] = True
         method_info = {'device':'cuda','log_file':log_file,'args':args}
-        
+        """
         avg_acc_task = run_paddle_transductive(enroll_embs,
                                   enroll_labels,
                                   test_embs,
@@ -110,7 +110,15 @@ def main(cfg):
                                   cfg.k_shot,
                                   method_info,
                                   cfg.batch_size)
-
+        """
+        avg_acc_task = run_algo_transductive(enroll_embs,
+                                  enroll_labels,
+                                  test_embs,
+                                  test_labels,
+                                  cfg.k_shot,
+                                  method_info,
+                                  cfg.batch_size)
+        
         logger.info(f"Accuracy for task {i} is {avg_acc_task}%.")
         computing_duration = time.time() - task_start_time
         print(f"Time taken by task {i} is {computing_duration} s")

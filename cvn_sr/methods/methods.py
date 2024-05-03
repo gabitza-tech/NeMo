@@ -2,9 +2,11 @@ import os
 import numpy as np
 from tqdm import tqdm
 import torch
-from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
+from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval, get_one_hot
+from utils.utils import compute_acc
 from methods.paddle import PADDLE
 from methods.tim import ALPHA_TIM, TIM_GD
+import torch.nn.functional as F
 
 def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"):
 
@@ -229,4 +231,171 @@ def run_tim(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
         
     avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
 
+    return avg_acc_task
+
+def run_algo_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info, batch_size):
+    """
+    This function predicts using the PADDLE algorithm over a SINGLE TASK. 
+    We can also iterate over the query with a batch_size! 
+
+    INPUT:
+    test_embs: (Q_samples, n_patches_sample, feature_dim) shape, Q_samples represents the total number of query samples
+    test_labels: (Q_samples,) shape, enrollment labels
+    enroll_embs: (S_samples, feature_dim) shape, S_samples represents the total number of support samples
+    enroll_labels: (S_samples,) shape, enrollment labels
+    k_shot: depending on k_shot, we choose the batch-size
+    method_info: arguments for paddle!
+
+    INTERMEDIATE:
+    x_q: [len_batch, n_patches_sample, feature_dim]
+    y_q: [len_batch, n_patches_sample, 1] (OBSERVATION: it could also be [len_batch,1,1]])
+    x_s: [len_batch, S_samples, feature_dim]
+    y_s: [len_batch, S_samples, 1]
+
+    RETURN:
+    avg_acc_task: average accuracy over the task
+    """
+
+    """
+    if k_shot == 1:
+        query_batch = 512
+    elif k_shot == 3:
+        query_batch = 256
+    elif k_shot == 5:
+        query_batch = 128
+    else: 
+        query_batch = 50
+    """  
+    acc_list = []
+
+    query_batch = 100
+    for j in tqdm(range(0,test_labels.shape[0],query_batch)):
+    #for j in tqdm(range(test_labels.shape[0])):
+        
+        end = j+query_batch
+        if end>test_labels.shape[0]-1:
+            end = test_labels.shape[0]-1
+        if end == j:
+            end = j+1
+
+        len_batch = end - j
+
+        w_s = []
+        w_sq = []
+        z_s = []
+        z_q = []
+        labels = sorted(list(np.unique(enroll_labels)))
+        
+        for label in labels:
+            
+            indices = np.where(enroll_labels == label)
+            w_s_l = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices[0])
+            w_sq_l = (enroll_embs[indices].sum(axis=0).squeeze()+test_embs[j:end].sum(axis=1).squeeze()) / (len(indices[0])+test_embs[j:end].shape[1])
+            
+            z_s.append(enroll_embs[indices])
+            w_s.append(w_s_l)
+            w_sq.append(w_sq_l)
+
+        #print(test_embs.shape[1])
+        z_s = np.expand_dims(np.array(z_s),0)
+        w_s = np.expand_dims(np.expand_dims(np.asarray(w_s),0),2)
+        z_q = np.expand_dims(test_embs[j:end],1)
+        w_q = np.expand_dims(z_q.sum(axis=2)/z_q.shape[2],2)
+        w_sq = np.expand_dims(np.transpose(np.asarray(w_sq),(1,0,2)),2)
+
+        #print(z_s.shape)
+        #print(w_s.shape)
+        #print(z_q.shape)
+        #print(w_q.shape)
+        #print(w_sq.shape)
+        # Assuming w_sq, z_s, w_s, z_q are NumPy arrays or existing PyTorch tensors
+        # Convert NumPy arrays to PyTorch tensors if needed
+        w_sq = torch.from_numpy(w_sq).float()
+        z_s = torch.from_numpy(z_s).float()
+        w_s = torch.from_numpy(w_s).float()
+        z_q = torch.from_numpy(z_q).float()
+        w_q = torch.from_numpy(w_q).float()
+
+        # Move tensors to GPU if available
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        w_sq = w_sq.to(device)
+        z_s = z_s.to(device)
+        w_s = w_s.to(device)
+        z_q = z_q.to(device)
+        w_q = w_q.to(device)
+
+        """
+        # Calculate sum_s and sum_q in PyTorch
+        sum_s = torch.sum((w_sq - z_s)**2, dim=2) - torch.sum((w_s - z_s)**2, dim=2)
+        sum_q = torch.sum((w_sq - z_q)**2, dim=2)
+        # Calculate C_l
+        C_l = torch.sum(sum_s + sum_q, dim=2)
+        # Get predicted labels by finding the index of the minimum value along the last dimension
+        pred_labels = torch.argmin(C_l, dim=-1)
+        """
+        """
+        #COS w_s w_q
+        C_l = torch.matmul(w_q.squeeze().squeeze(),w_s.squeeze().squeeze().T)
+        pred_labels = C_l.argmax(axis=-1)
+        """
+        #Algo new
+        sum_sq= torch.sum((w_sq - z_s)**2, dim=2) + torch.sum((w_sq - z_q)**2, dim=2)
+        sum_s_q = torch.sum((w_s - z_s)**2, dim=2) + torch.sum((w_q - z_q)**2, dim=2)
+        C_l = torch.sum(sum_sq - sum_s_q, dim=2)
+        pred_labels = torch.argmin(C_l, dim=-1)
+        
+        #print(sum_s.shape)
+        #print(sum_q.shape)
+        #print(pred_labels)
+
+        acc_list.extend(pred_labels)
+        
+    cor = 0
+    for i in range(len(acc_list)):
+        if acc_list[i] == test_labels[i]:
+            cor += 1
+
+    avg_acc_task = cor/len(acc_list)
+    print(avg_acc_task)
+        
+    return avg_acc_task
+    """
+    # Algo gabi
+    sum_s1 = np.sum(((w_s-z_q)**2-(w_sq-z_q)**2),axis=1)
+    sum_s2 = np.sum(((w_sq-z_s)**2),axis=1)
+    C_l = np.sum((sum_s1+sum_s2),axis=-1)        
+    """
+    """
+    # Algo gabi2
+    sum_s1 = np.sum(((w_s-z_q)**2-(w_sq-z_q)**2),axis=1)
+    sum_s2 = np.sum(((w_q-z_s)**2-(w_sq-z_s)**2),axis=1)
+    C_l = np.sum((sum_s1+sum_s2),axis=-1) 
+    """
+    """
+    
+    #Algo gabi3
+    scores = np.matmul(np.sum(w_sq,axis=1).squeeze(), w_q.T)+np.matmul(np.sum(w_s,axis=1).squeeze(),w_q.T)
+    """
+    
+    """
+    #Algo gabi4
+    scores = np.matmul(w_q,np.sum(w_s,axis=1).squeeze().T)
+    
+    pred_label = scores.argmax(axis=-1) 
+    """
+    
+    """
+    C_l = np.sum(((w_s-w_q)**2).squeeze(),axis=-1)
+    """
+    pred_label = C_l.argmin(axis=-1)
+    
+
+    if pred_label == test_labels[i]:
+        acc += 1
+        #print(pred_label)
+        #print(test_labels[i])
+
+    avg_acc_task = acc/test_embs.shape[0]
+    #avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
+    
     return avg_acc_task
