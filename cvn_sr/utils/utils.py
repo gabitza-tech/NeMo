@@ -58,6 +58,8 @@ def sampler_windows_query(test_dict,sampled_classes):
     test_labels = np.asarray([all_labels[indices[0]] for indices in grouped_indices])
     test_labels = np.asarray([label_dict[label] for label in test_labels])
 
+    
+
     return test_embs, test_labels
 
 def sampler_support(enroll_dict, sampled_classes,k_shot):
@@ -70,6 +72,8 @@ def sampler_support(enroll_dict, sampled_classes,k_shot):
     """
     
     all_enroll_labels = np.array(enroll_dict['concat_labels'])
+    all_slices = np.asarray(enroll_dict['concat_slices'])
+
     value_masks = [all_enroll_labels == class_name for class_name in sorted(sampled_classes)]
     # Extract indices for each value
     value_indices = [np.where(mask)[0] for mask in value_masks]
@@ -129,9 +133,6 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     enroll_labels = all_labels[enroll_indices]
     enroll_labels = np.asarray([label_dict[label] for label in enroll_labels])
 
-    #enroll_slices = all_slices[enroll_indices]
-    #enroll_patchs = all_patchs[enroll_indices]
-
     return enroll_embs, enroll_labels#, enroll_slices,enroll_patchs
 
 def embedding_normalize(embs, use_std=False, eps=1e-10):
@@ -163,20 +164,24 @@ def find_matching_positions(list1, list2):
     matching_positions = [i for i, vector in enumerate(list1) if tuple(vector) in set_list2]
     return matching_positions
 
-def compute_acc(pred_labels,test_labels,sampled_classes):
+def compute_acc(pred_labels,pred_labels_top5,test_labels,sampled_classes):
     total_preds = 0
     correct_preds = 0
+    correct_preds_top5 = 0
 
     class_acc = {}
     for cls in range(len(sampled_classes)):
         class_acc[cls] = {}
         class_acc[cls]['total_preds'] = 0
         class_acc[cls]['correct_preds'] = 0
+        class_acc[cls]['top5_correct_preds'] = 0
         class_acc[cls]['preds'] = []
+        class_acc[cls]['top5_preds'] = []
 
     # label in matched_labels is the position of a class in sampled_classes, from argmax
     # matched_labels and test_labels have the same size.
     for (j,label) in enumerate(pred_labels):
+        
         total_preds += 1
         class_acc[test_labels[j]]['total_preds'] +=1
         class_acc[test_labels[j]]['preds'].append(label)
@@ -184,7 +189,15 @@ def compute_acc(pred_labels,test_labels,sampled_classes):
         if label == test_labels[j]:
             correct_preds += 1
             class_acc[test_labels[j]]['correct_preds'] +=1
+        
+    for (j,labels) in enumerate(pred_labels_top5):
+        class_acc[test_labels[j]]['top5_preds'].append(labels)
+        if test_labels[j] in labels:
+            correct_preds_top5 += 1
+            class_acc[test_labels[j]]['top5_correct_preds'] +=1
+        
 
     acc = 100*(correct_preds/total_preds)
+    acc_top5 = 100*(correct_preds_top5/total_preds)
 
-    return acc
+    return acc, acc_top5

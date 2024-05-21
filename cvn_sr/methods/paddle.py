@@ -1,5 +1,5 @@
 import torch.nn.functional as F
-from utils.paddle_utils import get_one_hot, Logger, most_common_value
+from utils.paddle_utils import get_one_hot, Logger, most_common_value, top_k_most_common
 from tqdm import tqdm
 import torch
 import time
@@ -25,6 +25,7 @@ class KM(object):
         self.timestamps = []
         self.criterions = []
         self.test_acc = []
+        self.test_acc_top5 = []
 
     
     def get_logits(self, samples):
@@ -69,26 +70,46 @@ class KM(object):
             y_q : torch.Tensor of shape [n_task, n_query] :
         """
         preds_q = self.u.argmax(2)
+        #print(self.u.shape)
+        ###_,preds_q_top5 = torch.topk(self.u, k=5, dim=2, largest=True)
+        #print(preds_q_top5.shape)
+        #print(preds_q_top5)
+        #print(preds_q.shape)
+        #print(preds_q)
+        ###preds_q_top5 = preds_q_top5.reshape(preds_q_top5.shape[0],-1)
+        ###most_common_values = top_k_most_common(preds_q_top5, k=5)
+        #print(most_common_values)
+        #print(most_common_values.shape)
+
         if self.maj_vote:
             preds_q_maj = torch.tensor([[most_common_value(vector)] for vector in preds_q])
             y_q_maj = torch.tensor([[most_common_value(vector)] for vector in y_q])
             accuracy = (preds_q_maj == y_q_maj).float().mean(1, keepdim=True)
+
+            ###result = torch.zeros((y_q_maj.shape[0], 1), dtype=torch.int)
+            ###for i in range(y_q_maj.shape[0]):
+            ###    if torch.any(most_common_values[i] == y_q_maj[i].item()):
+            ###        result[i] = 1
+
+
         else:
             accuracy = (preds_q == y_q).float().mean(1, keepdim=True)
-            
+        
         #if 0 in accuracy:
         #    print(preds_q)
         #    print(y_q)
         #    print(accuracy)
         self.test_acc.append(accuracy)
-
+        ###self.test_acc_top5.append(result)
+        
 
     def get_logs(self):
 
         self.criterions = torch.stack(self.criterions, dim=0).cpu().numpy()
         self.test_acc = torch.cat(self.test_acc, dim=1).cpu().numpy()
+        ###self.test_acc_top5 = torch.cat(self.test_acc_top5, dim=1).cpu().numpy()
         return {'timestamps': self.timestamps, 'criterions':self.criterions,
-                'acc': self.test_acc}
+                'acc': self.test_acc,'acc_top5': self.test_acc_top5}
 
     def run_task(self, task_dic):
         """

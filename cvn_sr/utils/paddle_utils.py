@@ -14,6 +14,14 @@ import logging
 import copy
 import requests
 
+def top_k_most_common(tensor, k=5):
+    top_k_values = []
+    for i in range(tensor.shape[0]):
+        unique_values, counts = torch.unique(tensor[i], return_counts=True)
+        sorted_indices = counts.argsort(descending=True)[:k]
+        top_k_values.append(unique_values[sorted_indices])
+    return torch.stack(top_k_values)
+
 def most_common_value(tensor):
     values, counts = torch.unique(tensor, return_counts=True)
     max_count_index = counts.argmax()

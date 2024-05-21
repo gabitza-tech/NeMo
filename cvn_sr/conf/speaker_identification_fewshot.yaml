@@ -5,15 +5,27 @@ data:
     test_embs: ???
     out_file: null
     sample_rate: 16000
+
+log_dir: "test" #"logs_cross"
+
+batch_size: 32
+backbone: "ecapa"
     
 n_way: 1251
 k_shot: 1
 n_tasks: 1
+
 normalize: True
 
-method: "normal" 
-backend: "cosine_similarity"
+method: "simpleshot"
 
+# Stuff for SimpleShot
+avg: "normal" 
+backend: "l2" #"cosine"
+
+# Stuff for Paddle
+alpha: 1
+iter: 20
 # json manifest line example
 #
 # enrollment_manifest:

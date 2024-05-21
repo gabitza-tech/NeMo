@@ -8,7 +8,7 @@ from methods.paddle import PADDLE
 from methods.tim import ALPHA_TIM, TIM_GD
 import torch.nn.functional as F
 
-def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"):
+def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,avg="mean",backend="l2"):
 
     print("Using SimpleShot method")
     # Calculate the mean embeddings for each class in the support
@@ -17,9 +17,9 @@ def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"
     for label in range(len(sampled_classes)):
         
         indices = np.where(enroll_labels == label)
-        if method == "normal":
+        if avg == "normal":
             embedding = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices[0])
-        if method == "median":
+        if avg == "median":
             embedding = np.median(enroll_embs[indices], axis=0)
 
         avg_enroll_embs.append(embedding)
@@ -27,10 +27,32 @@ def simpleshot(enroll_embs,enroll_labels,test_embs,sampled_classes,method="mean"
     avg_enroll_embs = np.asarray(avg_enroll_embs)
     
     # Calculate cosine similarity between test embeddings and the transpose of the averaged class embeddings
-    scores = np.matmul(test_embs, avg_enroll_embs.T)
-    pred_labels = scores.argmax(axis=-1)
+    #scores = np.matmul(test_embs, avg_enroll_embs.T)
+    #pred_labels = scores.argmax(axis=-1)
 
-    return pred_labels
+    # Euclidian distance/L2 norm
+    if backend == "cosine":
+        print("Using cosine similarity")
+        scores = np.matmul(test_embs, avg_enroll_embs.T)
+        pred_labels = scores.argmax(axis=-1)
+    else:
+        print("Using L2 norm")
+        test_embs = np.expand_dims(test_embs,1)
+        avg_enroll_embs = np.expand_dims(avg_enroll_embs,0)
+
+        test_embs = torch.from_numpy(test_embs).float().to(torch.device('cpu'))
+        avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(torch.device('cpu'))
+
+        dist = (test_embs-avg_enroll_embs)**2
+        #C_l = dist.sum(2)
+        #pred_labels = C_l.argmin(axis=-1)
+        
+        C_l = torch.sum(dist,dim=2)
+        pred_labels = torch.argmin(C_l, dim=-1).tolist()
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
+        
+
+    return pred_labels, pred_labels_top5
 
 def run_paddle(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
     """
@@ -132,6 +154,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
 
     query_batch = int(batch_size)
     acc_mean_list = []
+    acc_mean_list_top5 = []
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
         
         end = j+query_batch
@@ -156,17 +179,19 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         method = PADDLE(**method_info)
         logs = method.run_task(task_dic)
         acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
+        #acc_sample_top5, _ = compute_confidence_interval(logs['acc_top5'][:, -1])
 
         #if acc_sample < 1:
         #    print(acc_sample)
         # Mean accuracy per batch
-        print(f"Accuracy of the sample/samples is:{acc_sample}\n")
+        #print(f"Accuracy of the sample/samples is:{acc_sample}\n")
         acc_mean_list.append(acc_sample*len_batch)
-        #acc_mean_list.append(acc_sample)
+        #acc_mean_list_top5.append(acc_sample_top5*len_batch)
         
-    avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
+    avg_acc_task = 100*sum(acc_mean_list)/test_labels.shape[0]
+    #avg_acc_task_top5 = 100*sum(acc_mean_list_top5)/test_labels.shape[0]
     
-    return avg_acc_task
+    return avg_acc_task#,avg_acc_task_top5
 
 def run_tim(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
     """
@@ -267,6 +292,7 @@ def run_algo_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot
         query_batch = 50
     """  
     acc_list = []
+    acc_list_top5 = []
 
     query_batch = 100
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
@@ -289,25 +315,29 @@ def run_algo_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot
         for label in labels:
             
             indices = np.where(enroll_labels == label)
-            w_s_l = (enroll_embs[indices].sum(axis=0).squeeze()) / len(indices[0])
-            w_sq_l = (enroll_embs[indices].sum(axis=0).squeeze()+test_embs[j:end].sum(axis=1).squeeze()) / (len(indices[0])+test_embs[j:end].shape[1])
+
+            #print(test_embs[j:end].sum(axis=1).shape)
+            #print(enroll_embs[indices].sum(axis=0).shape)
             
+            w_s_l = np.expand_dims(enroll_embs[indices].sum(axis=0),0) / len(indices[0])
+            
+            w_sq_l = (np.expand_dims(enroll_embs[indices].sum(axis=0),0)+test_embs[j:end].sum(axis=1)) / (len(indices[0])+test_embs[j:end].shape[1])
+            
+            #print(w_s_l.shape)
+            #print(w_sq_l.shape)
             z_s.append(enroll_embs[indices])
             w_s.append(w_s_l)
             w_sq.append(w_sq_l)
 
+            
         #print(test_embs.shape[1])
         z_s = np.expand_dims(np.array(z_s),0)
-        w_s = np.expand_dims(np.expand_dims(np.asarray(w_s),0),2)
+        w_s = np.expand_dims(np.asarray(w_s),0)
         z_q = np.expand_dims(test_embs[j:end],1)
         w_q = np.expand_dims(z_q.sum(axis=2)/z_q.shape[2],2)
         w_sq = np.expand_dims(np.transpose(np.asarray(w_sq),(1,0,2)),2)
 
-        #print(z_s.shape)
-        #print(w_s.shape)
-        #print(z_q.shape)
-        #print(w_q.shape)
-        #print(w_sq.shape)
+        
         # Assuming w_sq, z_s, w_s, z_q are NumPy arrays or existing PyTorch tensors
         # Convert NumPy arrays to PyTorch tensors if needed
         w_sq = torch.from_numpy(w_sq).float()
@@ -317,48 +347,76 @@ def run_algo_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_shot
         w_q = torch.from_numpy(w_q).float()
 
         # Move tensors to GPU if available
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device('cuda')
         w_sq = w_sq.to(device)
         z_s = z_s.to(device)
         w_s = w_s.to(device)
         z_q = z_q.to(device)
         w_q = w_q.to(device)
 
-        """
+        """"""
         # Calculate sum_s and sum_q in PyTorch
         sum_s = torch.sum((w_sq - z_s)**2, dim=2) - torch.sum((w_s - z_s)**2, dim=2)
         sum_q = torch.sum((w_sq - z_q)**2, dim=2)
         # Calculate C_l
         C_l = torch.sum(sum_s + sum_q, dim=2)
-        # Get predicted labels by finding the index of the minimum value along the last dimension
         pred_labels = torch.argmin(C_l, dim=-1)
-        """
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
+        
         """
         #COS w_s w_q
         C_l = torch.matmul(w_q.squeeze().squeeze(),w_s.squeeze().squeeze().T)
         pred_labels = C_l.argmax(axis=-1)
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=True)
+        """
+        """
+        #dist w_s z_q or w_s w_q
+
+        dist = ((w_s-w_q)**2).squeeze()
+        
+
+        C_l = torch.sum(dist,dim=2)
+        pred_labels = torch.argmin(C_l, dim=-1)
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
+        """
+        """
+        #dist z_s z_q
+        dist = torch.sum(((z_s-z_q)**2),dim=2)
+        C_l = torch.sum(dist,dim=2)
+        pred_labels = torch.argmin(C_l, dim=-1)
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
+        """
         """
         #Algo new
         sum_sq= torch.sum((w_sq - z_s)**2, dim=2) + torch.sum((w_sq - z_q)**2, dim=2)
         sum_s_q = torch.sum((w_s - z_s)**2, dim=2) + torch.sum((w_q - z_q)**2, dim=2)
         C_l = torch.sum(sum_sq - sum_s_q, dim=2)
         pred_labels = torch.argmin(C_l, dim=-1)
-        
+        """
         #print(sum_s.shape)
         #print(sum_q.shape)
         #print(pred_labels)
 
         acc_list.extend(pred_labels)
-        
+        acc_list_top5.extend(pred_labels_top5)
+
     cor = 0
+    cor_top5 = 0
     for i in range(len(acc_list)):
         if acc_list[i] == test_labels[i]:
             cor += 1
+        if test_labels[i] in acc_list_top5[i]:
+            cor_top5 += 1
+        #else:
+            #print(test_labels[i])
+            #print(acc_list_top5[i])
 
-    avg_acc_task = cor/len(acc_list)
+    avg_acc_task = 100*cor/len(acc_list)
+    avg_acc_task_top5 = 100*cor_top5/len(acc_list_top5)
     print(avg_acc_task)
-        
-    return avg_acc_task
+    print(f"Top 5 accuracy is {avg_acc_task_top5}.")
+    return avg_acc_task, avg_acc_task_top5
     """
     # Algo gabi
     sum_s1 = np.sum(((w_s-z_q)**2-(w_sq-z_q)**2),axis=1)
