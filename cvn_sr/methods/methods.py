@@ -165,8 +165,8 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
 
         len_batch = end - j
 
-        x_q = torch.tensor(test_embs[j:end])
-        y_q = torch.tensor(test_labels[j:end]).long().unsqueeze(1).unsqueeze(2).repeat(1,x_q.shape[1],1) # It can also work with a shape of [len_batch,1,1] (repeat operation is not needed, but it is nicer and clearer in this way)
+        x_q = torch.tensor(test_embs[j:end]).view(1,len_batch,-1)
+        y_q = torch.tensor(test_labels[j:end]).long().unsqueeze(1).unsqueeze(2).repeat(1,x_q.shape[1],1)#.view(1,len_batch,-1) # It can also work with a shape of [len_batch,1,1] (repeat operation is not needed, but it is nicer and clearer in this way)
         x_s = torch.tensor(enroll_embs).unsqueeze(0).repeat(len_batch,1,1)
         y_s = torch.tensor(enroll_labels).long().unsqueeze(0).unsqueeze(2).repeat(len_batch,1,1)
 
@@ -179,19 +179,19 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         method = PADDLE(**method_info)
         logs = method.run_task(task_dic)
         acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
-        #acc_sample_top5, _ = compute_confidence_interval(logs['acc_top5'][:, -1])
-
+        acc_sample_top5, _ = compute_confidence_interval(logs['acc_top5'][:, -1])
+        
         #if acc_sample < 1:
         #    print(acc_sample)
         # Mean accuracy per batch
         #print(f"Accuracy of the sample/samples is:{acc_sample}\n")
         acc_mean_list.append(acc_sample*len_batch)
-        #acc_mean_list_top5.append(acc_sample_top5*len_batch)
-        
-    avg_acc_task = 100*sum(acc_mean_list)/test_labels.shape[0]
-    #avg_acc_task_top5 = 100*sum(acc_mean_list_top5)/test_labels.shape[0]
+        acc_mean_list_top5.append(acc_sample_top5*len_batch)
     
-    return avg_acc_task#,avg_acc_task_top5
+    avg_acc_task = 100*sum(acc_mean_list)/test_labels.shape[0]
+    avg_acc_task_top5 = 100*sum(acc_mean_list_top5)/test_labels.shape[0]
+    
+    return avg_acc_task, avg_acc_task_top5
 
 def run_tim(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_info):
     """

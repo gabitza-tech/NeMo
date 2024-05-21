@@ -129,7 +129,7 @@ def main(cfg):
             pred_labels, pred_labels_top5 = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, avg=cfg.avg, backend=cfg.backend)
             acc,acc_top5 = compute_acc(pred_labels,pred_labels_top5,test_labels,sampled_classes)
         elif cfg.method == "paddle":
-            acc,acc_top5 = run_paddle_transductive(enroll_embs,
+            acc,acc_top5= run_paddle_transductive(enroll_embs,  
                                   enroll_labels,
                                   test_embs,
                                   test_labels,
@@ -145,16 +145,16 @@ def main(cfg):
                                   method_info,
                                   cfg.batch_size)
         
-        logger.info(f"Accuracy for task {i} is {acc}% and top 5 is {acc_top5}%.")
+        logger.info(f"Accuracy for task {i} is {acc}%") #and top 5 is {acc_top5}%.")
         computing_duration = time.time() - task_start_time
         print(f"Time taken by task {i} is {computing_duration} s")
         task_accs.append(acc)
-        #task_accs5.append(acc_top5)
+        task_accs5.append(acc_top5)
         
     final_avg_acc,final_conf_score = compute_confidence_interval(task_accs)
-    #final_avg_acc5,final_conf_score5 = compute_confidence_interval(task_accs5)
+    final_avg_acc5,final_conf_score5 = compute_confidence_interval(task_accs5)
     logger.info(f"Final Acc for all tasks is {final_avg_acc} and confidence interval:{final_conf_score}")
-    #logger.info(f"Final Top 5 Acc for all tasks is {final_avg_acc5} and confidence interval:{final_conf_score5}")
+    logger.info(f"Final Top 5 Acc for all tasks is {final_avg_acc5} and confidence interval:{final_conf_score5}")
 
 if __name__ == '__main__':
     main()
