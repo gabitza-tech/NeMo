@@ -68,7 +68,7 @@ class Tasks_Generator:
 
             combined_array = np.column_stack((all_labels, all_slices))
             unique_pairs, inverse_indices = np.unique(combined_array, axis=0, return_inverse=True)
-             
+            
             random_pairs = [(label, np.random.choice(unique_pairs[unique_pairs[:, 0] == label, 1], size=no_samples, replace=False)) for label in sorted(sampled_classes)]
             random_pairs_array = np.concatenate([[[label, id_] for id_ in ids] for label, ids in random_pairs])
 
