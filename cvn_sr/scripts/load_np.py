@@ -142,36 +142,26 @@ for run in range(n_runs):
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
-    n_tasks = 3
-    batch_size = 3
+    n_tasks = 100
+    batch_size = 20
 
-    support_embs = []
-    support_labels = []
-    query_embs = []
-    query_labels = []
-    
-    all_dur = []
-    all_query = []
-    task_accs=[]
-    task_accs5 = []
+    run_acc_ind=[]
+    run_acc_trans_centroid=[]
+    run_acc_trans_l2_sum=[]
+    run_acc_5 = []
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
-    print(len(uniq_classes))
+    #print(len(uniq_classes))
     for i in range(int(n_tasks/batch_size)):
         task_generator = Tasks_Generator(uniq_classes=uniq_classes,
                                          n_tasks=batch_size,
                                          n_ways=1251,
                                          n_ways_eff=1,
-                                         n_query=5,
-                                         k_shot=2)
+                                         n_query=3,
+                                         k_shot=1)
         
         start_sample_support = time.time()
         enroll_embs, enroll_labels = task_generator.sampler(enroll_dict, mode='support')
         test_embs, test_labels = task_generator.sampler(test_dict, mode='query')
-        
-        print(test_embs.shape)
-        print(test_labels.shape)
-        print(enroll_embs.shape)
-        print(enroll_labels.shape)
 
         duration_sampling = time.time() - start_sample_support
         print(f"Duration {duration_sampling}s for batch size {batch_size}")
@@ -184,17 +174,29 @@ for run in range(n_runs):
         method = 'simpleshot'
         print(f"Alpha is equal to {args['alpha']}.")
 
-
         if method == "simpleshot":
             #pred_labels, pred_labels_top5 = simpleshot_inductive(enroll_embs, enroll_labels, test_embs, avg='mean', backend='ecapa')
-            eval = Simpleshot(avg="mean",backend="L2")
-            #pred_labels, pred_labels_top5 = eval.inductive(enroll_embs, enroll_labels, test_embs, test_labels)
-            #pred_labels, pred_labels_top5 = eval.transductive_centroid(enroll_embs, enroll_labels, test_embs, test_labels)
-            pred_labels, pred_labels_top5 = eval.transductive_L2_sum(enroll_embs, enroll_labels, test_embs, test_labels)
+            eval = Simpleshot(avg="mean",backend="L2",method='inductive')
+            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
+            print(acc_list)
+            run_acc_ind.extend(acc_list)
+            eval = Simpleshot(avg="mean",backend="L2",method='transductive_centroid')
+            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
+            print(acc_list)
+            run_acc_trans_centroid.extend(acc_list)
+            eval = Simpleshot(avg="mean",backend="L2",method='transductive_L2_sum')
+            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
+            print(acc_list)
+            run_acc_trans_l2_sum.extend(acc_list)
 
-            #acc,acc_top5 = compute_acc(pred_labels,pred_labels_top5,test_labels,task_generator.support_classes)
-            #print(acc)
-            #print(acc_top5)
+    ind_acc = sum(run_acc_ind)/len(run_acc_ind)
+    print(f"Inductive Simpleshot acc: {ind_acc}")
+    trans_centroid_acc = sum(run_acc_trans_centroid)/len(run_acc_trans_centroid)
+    print(f"Transductive centroid Simpleshot acc:{trans_centroid_acc}")
+    trans_l2_sum_acc = sum(run_acc_trans_l2_sum)/len(run_acc_trans_l2_sum)
+    print(f"Transductive L2 sum Simpleshot acc:{trans_l2_sum_acc}")
+
+    """ 
             exit(0)
         
         elif method == "paddle":
@@ -235,7 +237,7 @@ for run in range(n_runs):
     logger.info(f"Final Acc for all tasks is {final_avg_acc} and confidence interval:{final_conf_score}")
     logger.info(f"Final Top 5 Acc for all tasks is {final_avg_acc5} and confidence interval:{final_conf_score5}")
 
-    """    
+       
     all_query = np.concatenate(np.array(all_query),axis=0).reshape(-1)
     print(all_query.shape)
 
