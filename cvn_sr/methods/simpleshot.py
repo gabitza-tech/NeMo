@@ -4,6 +4,7 @@ from tqdm import tqdm
 import torch
 from utils.utils import compute_acc
 import torch.nn.functional as F
+import random
 
 class Simpleshot():
     def __init__(self,avg="mean",backend="l2", majority="True",device='cpu', method="inductive"):
@@ -103,14 +104,14 @@ class Simpleshot():
         avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(self.device)
         
         if self.backend == "cosine":
-            print("Using SimpleShot inductive method with cosine similarity backend.")
+            print("Using SimpleShot transductive centroid method with cosine similarity backend.")
 
             scores = torch.einsum('ijk,ilk->ijl', avg_test_embs, avg_enroll_embs).repeat(1,n_query,1)
             pred_labels = torch.argmax(scores, dim=-1).long()
             _,pred_labels_top5 = torch.topk(scores, k=5, dim=-1, largest=True)
             
         else:
-            print("Using SimpleShot inductive method with L2 norm backend.")
+            print("Using SimpleShot transductive centroid method with L2 norm backend.")
             avg_test_embs = torch.unsqueeze(avg_test_embs,2) # [n_tasks,n_query,1,emb_shape]
             avg_enroll_embs = torch.unsqueeze(avg_enroll_embs,1) # [n_tasks,1,1251,emb_shape]
 
@@ -137,7 +138,7 @@ class Simpleshot():
         test_embs = torch.from_numpy(test_embs).float().to(self.device)
         avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(self.device)
       
-        print("Using SimpleShot inductive method with L2 norm backend")
+        print("Using SimpleShot transductive L2_sum method with L2 norm backend")
         test_embs = torch.unsqueeze(test_embs,2) # [n_tasks,n_query,1,emb_shape]
         avg_enroll_embs = torch.unsqueeze(avg_enroll_embs,1) # [n_tasks,1,1251,emb_shape]
 
@@ -160,3 +161,4 @@ def compute_acc(pred_labels, test_labels):
     acc_list = (pred_labels == test_labels).float().mean(dim=1).tolist()
     
     return acc_list
+

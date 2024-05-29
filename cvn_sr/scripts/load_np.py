@@ -129,19 +129,14 @@ print(f"Minimum number of occurrences: {min_occurrences}")
 print(f"Maximum number of occurrences: {max_occurrences}")
 """
 
-
-
 n_runs = 1
 seed = 42
-
 
 log_file = get_log_file(log_path='tests', backbone='ecapa', dataset='voxceleb1', method='balba')
 logger = Logger(__name__, log_file)
 
 for run in range(n_runs):
-    random.seed(seed)
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    
     n_tasks = 100
     batch_size = 20
 
@@ -150,21 +145,33 @@ for run in range(n_runs):
     run_acc_trans_l2_sum=[]
     run_acc_5 = []
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
-    #print(len(uniq_classes))
-    for i in range(int(n_tasks/batch_size)):
-        task_generator = Tasks_Generator(uniq_classes=uniq_classes,
-                                         n_tasks=batch_size,
+
+    task_generator = Tasks_Generator(uniq_classes=uniq_classes,
+                                         n_tasks=n_tasks,
                                          n_ways=1251,
                                          n_ways_eff=1,
                                          n_query=3,
-                                         k_shot=1)
+                                         k_shot=1,
+                                         seed=seed)
         
-        start_sample_support = time.time()
-        enroll_embs, enroll_labels = task_generator.sampler(enroll_dict, mode='support')
-        test_embs, test_labels = task_generator.sampler(test_dict, mode='query')
+    start_sample_support = time.time()
+    
+    test_embs, test_labels, test_audios = task_generator.sampler(test_dict, mode='query')
+    enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict, mode='support')
 
-        duration_sampling = time.time() - start_sample_support
-        print(f"Duration {duration_sampling}s for batch size {batch_size}")
+    duration_sampling = time.time() - start_sample_support
+    print(f"Duration {duration_sampling}s for batch size {batch_size}")
+
+    for start in tqdm(range(0,n_tasks,batch_size)):
+        #start = i*batch_size
+        end = start+batch_size
+        if end > n_tasks:
+            end = n_tasks
+
+        x_q = test_embs[start:end]
+        y_q = test_labels[start:end]
+        x_s = enroll_embs[start:end]
+        y_s = enroll_labels[start:end]
 
         args={}
         args['iter']=20
@@ -172,21 +179,21 @@ for run in range(n_runs):
         args['maj_vote'] = True
         method_info = {'device':'cuda','log_file':log_file,'args':args}
         method = 'simpleshot'
-        print(f"Alpha is equal to {args['alpha']}.")
+        #print(f"Alpha is equal to {args['alpha']}.")
 
         if method == "simpleshot":
             #pred_labels, pred_labels_top5 = simpleshot_inductive(enroll_embs, enroll_labels, test_embs, avg='mean', backend='ecapa')
             eval = Simpleshot(avg="mean",backend="L2",method='inductive')
-            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
-            print(acc_list)
+            acc_list = eval.eval(x_s, y_s, x_q, y_q)
+            #print(acc_list)
             run_acc_ind.extend(acc_list)
             eval = Simpleshot(avg="mean",backend="L2",method='transductive_centroid')
-            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
-            print(acc_list)
+            acc_list = eval.eval(x_s, y_s, x_q, y_q)
+            #print(acc_list)
             run_acc_trans_centroid.extend(acc_list)
             eval = Simpleshot(avg="mean",backend="L2",method='transductive_L2_sum')
-            acc_list = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels)
-            print(acc_list)
+            acc_list = eval.eval(x_s, y_s, x_q, y_q)
+            #print(acc_list)
             run_acc_trans_l2_sum.extend(acc_list)
 
     ind_acc = sum(run_acc_ind)/len(run_acc_ind)
