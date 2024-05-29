@@ -22,6 +22,8 @@ class Simpleshot():
             pred_labels, pred_labels_5 = self.transductive_centroid(enroll_embs,enroll_labels,test_embs,test_labels)
         elif self.method == "transductive_L2_sum":
             pred_labels, pred_labels_5 = self.transductive_L2_sum(enroll_embs,enroll_labels,test_embs,test_labels)
+        elif self.method == "EM":
+            pred_labels, pred_labels_5 = self.estimation_maximization(enroll_embs,enroll_labels,test_embs,test_labels)
     
         test_labels = torch.from_numpy(test_labels).long()
         acc_tasks = compute_acc(pred_labels, test_labels)
@@ -152,6 +154,38 @@ class Simpleshot():
         
         return pred_labels, pred_labels_top5
     
+    def estimation_maximization(self,enroll_embs,enroll_labels,test_embs,test_labels):
+        print("Using Estimation maximization method")
+        n_query = test_embs.shape[1]
+        x_sq = np.concatenate((enroll_embs,test_embs),1)
+        y_sq = np.concatenate((enroll_labels,test_labels),1)
+
+        w_s = self.calculate_centrois(enroll_embs, enroll_labels)
+        w_sq = self.calculate_centrois(x_sq, y_sq)
+        
+        device_here = torch.device('cuda:0')
+        w_s = torch.from_numpy(w_s).float().to(self.device).unsqueeze(1).to(device_here)
+        w_sq = torch.from_numpy(w_sq).float().to(self.device).unsqueeze(1).to(device_here)
+        z_s = torch.from_numpy(np.expand_dims(enroll_embs,2)).float().to(device_here)
+        z_q = torch.from_numpy(np.expand_dims(test_embs,2)).float().to(device_here)
+
+        #print(w_sq.shape)
+        #print(w_s.shape)
+        #print(z_s.shape)
+        #print(z_q.shape)
+        #print("-"*5)
+        # Calculate sum_s and sum_q in PyTorch
+        sum_s = torch.sum(((w_sq - z_s)**2 -(w_s - z_s)**2),dim=1)
+        sum_q = torch.sum((w_sq - z_q)**2,dim=1)
+        #print(sum_s.shape)
+        #print(sum_q.shape)
+        # Calculate C_l
+        C_l = torch.sum(sum_s+sum_q,dim=-1)
+        #print(C_l.shape)
+        pred_labels = torch.argmin(C_l, dim=-1).unsqueeze(1).repeat(1,n_query).to(torch.device('cpu'))
+        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
+
+        return pred_labels, pred_labels_top5
 
 def compute_acc(pred_labels, test_labels):
 

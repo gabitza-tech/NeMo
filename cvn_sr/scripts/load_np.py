@@ -137,13 +137,13 @@ logger = Logger(__name__, log_file)
 
 for run in range(n_runs):
     
-    n_tasks = 100
-    batch_size = 20
+    n_tasks = 10000
+    batch_size = 2
 
     run_acc_ind=[]
     run_acc_trans_centroid=[]
     run_acc_trans_l2_sum=[]
-    run_acc_5 = []
+    run_acc_EM = []
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
 
     task_generator = Tasks_Generator(uniq_classes=uniq_classes,
@@ -182,27 +182,38 @@ for run in range(n_runs):
         #print(f"Alpha is equal to {args['alpha']}.")
 
         if method == "simpleshot":
+            """"""
             #pred_labels, pred_labels_top5 = simpleshot_inductive(enroll_embs, enroll_labels, test_embs, avg='mean', backend='ecapa')
             eval = Simpleshot(avg="mean",backend="L2",method='inductive')
             acc_list = eval.eval(x_s, y_s, x_q, y_q)
             #print(acc_list)
             run_acc_ind.extend(acc_list)
+
             eval = Simpleshot(avg="mean",backend="L2",method='transductive_centroid')
             acc_list = eval.eval(x_s, y_s, x_q, y_q)
             #print(acc_list)
             run_acc_trans_centroid.extend(acc_list)
+
             eval = Simpleshot(avg="mean",backend="L2",method='transductive_L2_sum')
             acc_list = eval.eval(x_s, y_s, x_q, y_q)
             #print(acc_list)
             run_acc_trans_l2_sum.extend(acc_list)
+            
+            eval = Simpleshot(avg="mean",backend="L2",method='EM')
+            acc_list = eval.eval(x_s, y_s, x_q, y_q)
+            #print(acc_list)
+            run_acc_EM.extend(acc_list)
 
+    """"""
     ind_acc = sum(run_acc_ind)/len(run_acc_ind)
     print(f"Inductive Simpleshot acc: {ind_acc}")
     trans_centroid_acc = sum(run_acc_trans_centroid)/len(run_acc_trans_centroid)
     print(f"Transductive centroid Simpleshot acc:{trans_centroid_acc}")
     trans_l2_sum_acc = sum(run_acc_trans_l2_sum)/len(run_acc_trans_l2_sum)
     print(f"Transductive L2 sum Simpleshot acc:{trans_l2_sum_acc}")
-
+    
+    em_acc = sum(run_acc_EM)/len(run_acc_EM)
+    print(f"EM Simpleshot acc: {em_acc}")
     """ 
             exit(0)
         
