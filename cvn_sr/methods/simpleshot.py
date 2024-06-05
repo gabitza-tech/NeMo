@@ -2,7 +2,7 @@ import os
 import numpy as np
 from tqdm import tqdm
 import torch
-from utils.utils import compute_acc
+from utils.utils import majority_or_original
 import torch.nn.functional as F
 import random
 
@@ -14,7 +14,7 @@ class Simpleshot():
         self.device = torch.device(device)
         self.method = method
 
-    def eval(self,enroll_embs,enroll_labels,test_embs,test_labels):
+    def eval(self,enroll_embs,enroll_labels,test_embs,test_labels, test_audios):
 
         if self.method == "inductive":
             pred_labels, pred_labels_5 = self.inductive(enroll_embs,enroll_labels,test_embs,test_labels)
@@ -24,13 +24,27 @@ class Simpleshot():
             pred_labels, pred_labels_5 = self.transductive_L2_sum(enroll_embs,enroll_labels,test_embs,test_labels)
         elif self.method == "EM":
             pred_labels, pred_labels_5 = self.estimation_maximization(enroll_embs,enroll_labels,test_embs,test_labels)
-    
+        elif self.method == "inductive_maj":
+            pred_labels, pred_labels_5 = self.inductive(enroll_embs,enroll_labels,test_embs,test_labels)
+            pred_labels = majority_or_original(pred_labels)
+            
+        
         test_labels = torch.from_numpy(test_labels).long()
         acc_tasks = compute_acc(pred_labels, test_labels)
 
+        for i,acc in enumerate(acc_tasks):
+            if self.method == "EM" and acc == 0:
+                audio = test_audios[i]
+                label = test_labels[i]
+                with open("log_EM",'a') as f:
+                    f.write(f"For test audio {audio} with label {label} accuracy is: {acc}")
+                    f.write("\n")
+
+        #print(pred_labels)
+
         return acc_tasks
 
-    def calculate_centrois(self,enroll_embs,enroll_labels):
+    def calculate_centroids(self,enroll_embs,enroll_labels):
         # Returns [n_tasks,n_ways,192] tensor with the centroids
         # sampled_classes: [n_tasks,n_ways]
         
@@ -54,6 +68,42 @@ class Simpleshot():
 
         return avg_enroll_embs
 
+    def calculate_sq_z_dist(self,enroll_embs,test_embs,enroll_labels):
+        # Returns [n_tasks,n_ways,192] tensor with the centroids
+        # sampled_classes: [n_tasks,n_ways]
+        
+        sampled_classes=[]
+        for task in enroll_labels:
+            sampled_classes.append(sorted(list(set(task))))
+
+        distances = []
+        for i,task_classes in enumerate(sampled_classes):
+            task_distances = []
+            z_q = test_embs[i] # this one is the same for all classes, differs only per task
+            for label in task_classes:
+                indices = np.where(enroll_labels[i] == label)
+                # ALL THESE ARE FOR CLASS l (label)
+                z_s = enroll_embs[i][indices]
+                
+                N_samples_SQ = len(indices[0])+z_q.shape[0]
+                N_samples_S = len(indices[0])
+                
+                w_sq = np.expand_dims(((z_s.sum(axis=0).squeeze()+z_q.sum(axis=0).squeeze()) / N_samples_SQ),0)
+                w_s = np.expand_dims((z_s.sum(axis=0).squeeze() / N_samples_S),0)
+                
+                dist_w_sq_support = np.sum((w_sq-z_s)**2,axis=0)
+                dist_w_s_support = np.sum((w_s-z_s)**2,axis=0)
+                dist_w_sq_query = np.sum((w_sq-z_q)**2,axis=0)
+                
+                final_distance = dist_w_sq_query + dist_w_sq_support - dist_w_s_support
+
+                task_distances.append(final_distance)
+            distances.append(task_distances)
+
+        distances = np.asarray(distances)
+
+        return distances
+
     def inductive(self,enroll_embs,enroll_labels,test_embs,test_labels):
         """
         enroll_embs: [n_tasks,k_shot*n_ways,192]
@@ -62,7 +112,7 @@ class Simpleshot():
         test_labels: [n_tasks,n_query]
         """
         # Calculate the mean embeddings for each class in the support
-        avg_enroll_embs = self.calculate_centrois(enroll_embs, enroll_labels)
+        avg_enroll_embs = self.calculate_centroids(enroll_embs, enroll_labels)
 
         test_embs = torch.from_numpy(test_embs).float().to(self.device)
         avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(self.device)
@@ -88,7 +138,8 @@ class Simpleshot():
             _,pred_labels_top5 = torch.topk(C_l, k=5, dim=-1, largest=False)
 
         return pred_labels, pred_labels_top5
-    
+
+
     def transductive_centroid(self,enroll_embs,enroll_labels,test_embs,test_labels):
         """
         enroll_embs: [n_tasks,k_shot*n_ways,192]
@@ -99,8 +150,8 @@ class Simpleshot():
         # Calculate the mean embeddings for each class in the support
 
         n_query = test_embs.shape[1]
-        avg_enroll_embs = self.calculate_centrois(enroll_embs, enroll_labels)
-        avg_test_embs = self.calculate_centrois(test_embs, test_labels)
+        avg_enroll_embs = self.calculate_centroids(enroll_embs, enroll_labels)
+        avg_test_embs = self.calculate_centroids(test_embs, test_labels)
 
         avg_test_embs = torch.from_numpy(avg_test_embs).float().to(self.device)
         avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(self.device)
@@ -134,9 +185,8 @@ class Simpleshot():
         test_labels: [n_tasks,n_query]
         """
         n_query = test_embs.shape[1]
-        # Calculate the mean embeddings for each class in the support
-
-        avg_enroll_embs = self.calculate_centrois(enroll_embs, enroll_labels)
+    
+        avg_enroll_embs = self.calculate_centroids(enroll_embs, enroll_labels)
         test_embs = torch.from_numpy(test_embs).float().to(self.device)
         avg_enroll_embs = torch.from_numpy(avg_enroll_embs).float().to(self.device)
       
@@ -157,35 +207,15 @@ class Simpleshot():
     def estimation_maximization(self,enroll_embs,enroll_labels,test_embs,test_labels):
         print("Using Estimation maximization method")
         n_query = test_embs.shape[1]
-        x_sq = np.concatenate((enroll_embs,test_embs),1)
-        y_sq = np.concatenate((enroll_labels,test_labels),1)
-
-        w_s = self.calculate_centrois(enroll_embs, enroll_labels)
-        w_sq = self.calculate_centrois(x_sq, y_sq)
         
         device_here = torch.device('cuda:0')
-        w_s = torch.from_numpy(w_s).float().to(self.device).unsqueeze(1).to(device_here)
-        w_sq = torch.from_numpy(w_sq).float().to(self.device).unsqueeze(1).to(device_here)
-        z_s = torch.from_numpy(np.expand_dims(enroll_embs,2)).float().to(device_here)
-        z_q = torch.from_numpy(np.expand_dims(test_embs,2)).float().to(device_here)
-
-        #print(w_sq.shape)
-        #print(w_s.shape)
-        #print(z_s.shape)
-        #print(z_q.shape)
-        #print("-"*5)
-        # Calculate sum_s and sum_q in PyTorch
-        sum_s = torch.sum(((w_sq - z_s)**2 -(w_s - z_s)**2),dim=1)
-        sum_q = torch.sum((w_sq - z_q)**2,dim=1)
-        #print(sum_s.shape)
-        #print(sum_q.shape)
-        # Calculate C_l
-        C_l = torch.sum(sum_s+sum_q,dim=-1)
-        #print(C_l.shape)
-        pred_labels = torch.argmin(C_l, dim=-1).unsqueeze(1).repeat(1,n_query).to(torch.device('cpu'))
+        
+        dist = torch.from_numpy(self.calculate_sq_z_dist(enroll_embs, test_embs,enroll_labels))
+        C_l = torch.sum(dist,dim=-1)
+        pred_labels = torch.argmin(C_l,-1).unsqueeze(1).repeat(1,n_query).to(torch.device('cpu'))
         _,pred_labels_top5 = torch.topk(C_l, k=5, dim=1, largest=False)
-
-        return pred_labels, pred_labels_top5
+        
+        return pred_labels,pred_labels_top5
 
 def compute_acc(pred_labels, test_labels):
 

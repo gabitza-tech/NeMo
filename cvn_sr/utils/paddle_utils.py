@@ -1,5 +1,4 @@
 import torch
-import time
 import numpy as np
 import shutil
 from tqdm import tqdm
@@ -12,7 +11,6 @@ import yaml
 from ast import literal_eval
 import logging
 import copy
-import requests
 
 def top_k_most_common(tensor, k=5):
     top_k_values = []

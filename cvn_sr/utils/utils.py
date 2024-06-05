@@ -1,12 +1,22 @@
 import os
 import numpy as np
 import pickle
-from collections import Counter
+import torch
 
-def majority_element(input_list):
-    counts = Counter(input_list)
-    majority_item = counts.most_common(1)[0][0]
-    return majority_item
+def majority_or_original(tensor):
+    majority_labels = []
+    for task in tensor:
+        values, counts = task.unique(return_counts=True)
+        max_count = counts.max().item()
+        modes = values[counts == max_count]
+        
+        # If there's a tie (multiple modes), keep the original values for this task
+        if len(modes) > 1:
+            majority_labels.append(task)
+        else:
+            majority_labels.append(modes.repeat(len(task)))
+    
+    return torch.stack(majority_labels)
 
 def save_pickle(file, data):
     with open(file, 'wb') as f:
@@ -126,7 +136,6 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
 
     enroll_indices = np.array(find_matching_positions(combined_array, random_pairs_array))
 
-    
     enroll_embs = all_embs[enroll_indices]
     
     label_dict = {label:i for i,label in enumerate(sampled_classes)}
@@ -134,6 +143,38 @@ def sampler_windows_support(enroll_dict, sampled_classes,k_shot):
     enroll_labels = np.asarray([label_dict[label] for label in enroll_labels])
 
     return enroll_embs, enroll_labels#, enroll_slices,enroll_patchs
+
+def data_SQ_from_pkl(filepath):
+    data_dict = load_pickle(filepath)
+        
+    test_embs = data_dict['test_embs']
+    test_labels = data_dict['test_labels']
+    test_audios = data_dict['test_audios']
+    enroll_embs = data_dict['enroll_embs']
+    enroll_labels = data_dict['enroll_labels']
+    enroll_audios = data_dict['enroll_audios']
+
+    return test_embs,test_labels,test_audios,enroll_embs,enroll_labels,enroll_audios
+
+def find_matching_positions(list1, list2):
+    set_list2 = set(map(tuple, list2))
+    matching_positions = [i for i, vector in enumerate(list1) if tuple(vector) in set_list2]
+    return matching_positions
+
+def analyze_data(data):
+    unique_labels, counts = np.unique(data, return_counts=True)
+
+    # Calculate additional information
+    num_unique_labels = len(unique_labels)
+    min_appearances = np.min(counts)
+    max_appearances = np.max(counts)
+    average_appearances = np.mean(counts)
+
+    # Print the results (optional)
+    print(f"Number of unique labels: {num_unique_labels}")
+    print(f"Minimum appearances of a label: {min_appearances}")
+    print(f"Maximum appearances of a label: {max_appearances}")
+    print(f"Average appearances of a label: {average_appearances}")
 
 def embedding_normalize(embs, use_std=False, eps=1e-10):
     """
@@ -159,45 +200,11 @@ def embedding_normalize(embs, use_std=False, eps=1e-10):
 
     return embs
 
-def find_matching_positions(list1, list2):
-    set_list2 = set(map(tuple, list2))
-    matching_positions = [i for i, vector in enumerate(list1) if tuple(vector) in set_list2]
-    return matching_positions
-
-def compute_acc(pred_labels,pred_labels_top5,test_labels,sampled_classes):
-    total_preds = 0
-    correct_preds = 0
-    correct_preds_top5 = 0
-
-    class_acc = {}
-    for cls in range(len(sampled_classes)):
-        class_acc[cls] = {}
-        class_acc[cls]['total_preds'] = 0
-        class_acc[cls]['correct_preds'] = 0
-        class_acc[cls]['top5_correct_preds'] = 0
-        class_acc[cls]['preds'] = []
-        class_acc[cls]['top5_preds'] = []
-
-    # label in matched_labels is the position of a class in sampled_classes, from argmax
-    # matched_labels and test_labels have the same size.
-    for (j,label) in enumerate(pred_labels):
-        
-        total_preds += 1
-        class_acc[test_labels[j]]['total_preds'] +=1
-        class_acc[test_labels[j]]['preds'].append(label)
-
-        if label == test_labels[j]:
-            correct_preds += 1
-            class_acc[test_labels[j]]['correct_preds'] +=1
-        
-    for (j,labels) in enumerate(pred_labels_top5):
-        class_acc[test_labels[j]]['top5_preds'].append(labels)
-        if test_labels[j] in labels:
-            correct_preds_top5 += 1
-            class_acc[test_labels[j]]['top5_correct_preds'] +=1
-        
-
-    acc = 100*(correct_preds/total_preds)
-    acc_top5 = 100*(correct_preds_top5/total_preds)
-
-    return acc, acc_top5
+def CL2N_embeddings(enroll_embs,test_embs,normalize):
+    if not normalize:
+        return enroll_embs, test_embs
+    
+    all_embs = np.concatenate((enroll_embs,test_embs),axis=1)
+    all_embs = embedding_normalize(all_embs)
+    enroll_embs = all_embs[:,:enroll_embs.shape[1]]
+    test_embs = all_embs[:,enroll_embs.shape[1]:]
