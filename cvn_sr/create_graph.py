@@ -3,16 +3,17 @@ import json
 import os
 import matplotlib.gridspec as gridspec
 
-k_shots = [5,3]
+k_shots = [5,3,1]
 n_effs = [5,3,1]
-n_queries = [15,10,5,3,1]
-n_ways = 500
+n_queries = [1]#[15,10,5,3,1]
+n_ways = 487
 
-input_dir = f'log_alpha_experiments_{n_ways}_ways'
-output_dir = f'graphs_alpha_experiments_{n_ways}_ways'
+input_dir = f'log_alpha_voxceleb1_movies_{n_ways}_ways_3s'
+output_dir = f'graphs_alpha_voceleb1_movies_{n_ways}_ways_3s'
 
 if not os.path.exists(output_dir):
     os.mkdir(output_dir)
+
 for shot in k_shots:
     for n_eff in n_effs:
         # Create subplots

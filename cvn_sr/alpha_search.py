@@ -15,29 +15,31 @@ from utils.utils import CL2N_embeddings
 from methods.paddle import PADDLE
 from utils.paddle_utils import get_log_file,Logger
 
-query_file = "saved_embs/voxceleb1_3s/voxceleb1_3s_query_ecapa_embs.pkl"
-support_file = "saved_embs/voxceleb1_3s/voxceleb1_3s_support_ecapa_embs.pkl"
+query_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
+support_file = 'datasets_splits/embeddings/voxceleb1_3s_movies_ecapa_embs_257.pkl'
 enroll_dict = np.load(support_file, allow_pickle=True)
 test_dict = np.load(query_file, allow_pickle=True)
-merged_dict = {}
-for key in enroll_dict.keys():
-    merged_dict[key] = np.concatenate((enroll_dict[key],test_dict[key]),axis=0)
+#merged_dict = {}
+#for key in enroll_dict.keys():
+#    merged_dict[key] = np.concatenate((enroll_dict[key],test_dict[key]),axis=0)
+#dataset_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
+#merged_dict = np.load(dataset_file,allow_pickle=True)
 
 seed = 42
-n_tasks = 500
-batch_size = 20
+n_tasks = 1000
+batch_size = 30
 normalize = True
 args={}
 args['iter']=20
 
 alphas = [i for i in range(0, 76) if i % 3 == 0 or i % 5 == 0]
-n_queries = [15,10,5,3,1]
+n_queries = [5,3,1]
 k_shots = [5,3,1]
 n_ways_effs = [5,3,1]
 
 uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
 
-out_dir = "log_alpha_experiments_500_ways"
+out_dir = "log_alpha_voxceleb1_movies_257_ways_3s"
 if not os.path.exists(out_dir):
     os.mkdir(out_dir)
 
@@ -53,13 +55,15 @@ for k_shot in k_shots:
             
             task_generator = Tasks_Generator(uniq_classes=uniq_classes,
                                                 n_tasks=n_tasks,
-                                                n_ways=500,
+                                                n_ways=len(set(enroll_dict['concat_labels'])),
                                                 n_ways_eff=n_ways_eff,
                                                 n_query=n_query,
                                                 k_shot=k_shot,
                                                 seed=seed)
 
-            test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(merged_dict)
+            test_embs, test_labels, test_audios = task_generator.sampler(test_dict,mode='query')
+            enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict,mode='support')
+            #test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(merged_dict)
             enroll_embs, test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize)
 
             acc = {}
