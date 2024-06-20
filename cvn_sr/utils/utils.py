@@ -2,6 +2,8 @@ import os
 import numpy as np
 import pickle
 import torch
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def majority_or_original(tensor):
     majority_labels = []
@@ -208,3 +210,103 @@ def CL2N_embeddings(enroll_embs,test_embs,normalize):
     all_embs = embedding_normalize(all_embs)
     enroll_embs = all_embs[:,:enroll_embs.shape[1]]
     test_embs = all_embs[:,enroll_embs.shape[1]:]
+
+    return enroll_embs,test_embs
+
+def plot_embeddings(celeb_avg,movie_avg,movies_avg_adapted,theta):
+    if theta is None:
+        theta='None'
+    fig = plt.figure(figsize=(21, 7))
+    # Histogram plot
+    plt.subplot(1, 2, 1)
+    plt.hist(movie_avg, bins=50, alpha=0.5, label='Movie')
+    plt.hist(movies_avg_adapted, bins=50, alpha=0.5, label='Movie new')
+    plt.hist(celeb_avg, bins=50, alpha=0.5, label='Celeb')
+    plt.legend(loc='upper right')
+    plt.title(f'Histogram of Movie and Celeb for alpha:{theta}')
+    plt.xlabel('Value')
+    plt.ylabel('Frequency')
+
+    # KDE plot
+    plt.subplot(1, 2, 2)
+    sns.kdeplot(movie_avg, shade=True, label='Movie')
+    sns.kdeplot(movies_avg_adapted, shade=True, label='Movie new')
+    sns.kdeplot(celeb_avg, shade=True, label='Celeb')
+    plt.legend(loc='upper right')
+    plt.title(f'KDE of Movie and Celeb for alpha:{theta}')
+    plt.xlabel('Value')
+    plt.ylabel('Density')
+
+    plt.tight_layout()
+    #plt.show()
+    fig.savefig(f'plot_alpha_{theta}.png')
+
+def class_compute_transform_A(x_q,y_q,x_s,y_s, theta):
+    uniq_classes = sorted(list(set(y_s)))
+    print(x_q.shape)
+    print(x_s.shape)
+    print(len(uniq_classes))
+    sum_s1 = 0
+    sum_s2 = 0
+    count = 0
+    for label in uniq_classes:
+        indices_q = np.where(y_q == label)
+        indices_s = np.where(y_s == label)
+
+        print(x_q[indices_q].shape)
+        print(x_s[indices_s].shape)
+        if len(indices_q[0]) > len(indices_s[0]):
+            samples_q = x_q[indices_q]
+            initial_samples_s = x_s[indices_s]
+
+            target_size = len(indices_q[0])
+            original_array_size = len(indices_s[0])
+
+            repeat_factor = target_size // original_array_size
+            remainder = target_size % original_array_size
+
+            # Repeat the rows
+            oversampled_array = np.repeat(initial_samples_s, repeat_factor, axis=0)
+
+            # Add additional random rows if there is a remainder
+            if remainder > 0:
+                additional_rows = initial_samples_s[np.random.choice(original_array_size, remainder, replace=True)]
+                oversampled_array = np.vstack([oversampled_array, additional_rows])
+
+            samples_s = oversampled_array
+            
+        else:
+            initial_samples_q = x_q[indices_q]
+            samples_s = x_s[indices_s]
+
+            target_size = len(indices_s[0])
+            original_array_size = len(indices_q[0])
+
+            repeat_factor = target_size // original_array_size
+            remainder = target_size % original_array_size
+
+            # Repeat the rows
+            oversampled_array = np.repeat(initial_samples_q, repeat_factor, axis=0)
+
+            # Add additional random rows if there is a remainder
+            if remainder > 0:
+                additional_rows = initial_samples_q[np.random.choice(original_array_size, remainder, replace=True)]
+                oversampled_array = np.vstack([oversampled_array, additional_rows])
+
+            samples_q = oversampled_array
+
+        #print(samples_q.shape)
+        #print(samples_s.shape)
+        #print('---')
+
+        count += samples_q.shape[0]
+        for i in range(samples_q.shape[0]):
+            sum_s1 += np.matmul(np.expand_dims(samples_s[i],0).T,np.expand_dims(samples_q[i],0))
+            sum_s2 += np.matmul(np.expand_dims(samples_q[i],0).T,np.expand_dims(samples_q[i],0))
+
+    print(count)
+    sum_s2 += np.eye(192)*theta
+    matrix_inverse = np.linalg.inv(sum_s2)
+    A = np.matmul(sum_s1,matrix_inverse)
+
+    return A     
