@@ -13,21 +13,26 @@ from utils.utils import save_pickle
 
 file1 = sys.argv[1]
 file2 = sys.argv[2]
-seeds = [sys.argv[3]]
+#seeds = [sys.argv[3]]
 enroll_dict = np.load(file1, allow_pickle=True)
 test_dict = np.load(file2, allow_pickle=True)
 
-#seeds = [42, 56, 100, 24, 51]
+seeds = [42, 56, 100, 24, 51]
 
 for seed in seeds:
     
-    n_tasks = 10000
+    n_tasks = 20
 
     run_acc_ind=[]
     run_acc_trans_centroid=[]
     run_acc_trans_l2_sum=[]
     run_acc_EM = []
     uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
+
+    merged_dict = {}
+    for key in enroll_dict.keys():
+        merged_dict[key] = np.concatenate((enroll_dict[key],test_dict[key]),axis=0)
+
 
     task_generator = Tasks_Generator(uniq_classes=uniq_classes,
                                          n_tasks=n_tasks,
@@ -38,10 +43,17 @@ for seed in seeds:
                                          seed=int(seed))
         
     start_sample_support = time.time()
-    
-    test_embs, test_labels, test_audios = task_generator.sampler(test_dict, mode='query')
-    enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict, mode='support')
+    test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(merged_dict)
+    #test_embs, test_labels, test_audios = task_generator.sampler(test_dict, mode='query')
+    #enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict, mode='support')
 
+    print(test_embs.shape)
+    print(test_labels.shape)
+    print(test_audios.shape)
+    print(enroll_embs.shape)
+    print(enroll_labels.shape)
+    print(enroll_audios.shape)
+    """
     out_dict = {}
     out_dict['test_embs'] = test_embs
     out_dict['test_labels'] = test_labels
@@ -57,4 +69,4 @@ for seed in seeds:
     out_file = os.path.join(out_dir,file)
     save_pickle(out_file,out_dict)
 
-
+    """

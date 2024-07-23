@@ -8,15 +8,15 @@ import time
 from utils.task_generator import Tasks_Generator
 from tqdm import tqdm
 from methods.simpleshot import Simpleshot
-from methods.methods import run_paddle_new
+from methods.methods import run_paddle_new,run_2stage_paddle
 import os 
 from utils.utils import save_pickle
-from utils.utils import CL2N_embeddings
+from utils.utils import CL2N_embeddings, embedding_normalize
 from methods.paddle import PADDLE
 from utils.paddle_utils import get_log_file,Logger
 
 query_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
-support_file = 
+support_file = 'datasets_splits/embeddings/voxceleb1_3s_movies_ecapa_embs_257.pkl'
 enroll_dict = np.load(support_file, allow_pickle=True)
 test_dict = np.load(query_file, allow_pickle=True)
 merged_dict = {}
@@ -28,19 +28,22 @@ for key in enroll_dict.keys():
 seed = 42
 n_tasks = 10000
 batch_size = 100
+
 normalize = True
+use_mean = True
+
 args={}
 args['iter']=20
 
 n_queries = [5,3,1]
 k_shots = [5,3,1]
-n_ways_effs = [5,3,1]
+n_ways_effs = [1]#[5,3,1]
 
 uniq_classes = sorted(list(set(merged_dict['concat_labels'])))
 #uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
 print(len(uniq_classes))
 tune_dir = "logs/log_alpha_voxceleb1_val_125_ways_3s"
-out_dir = "logs/log_alpha_Q_voxceleb1_S_voxmovies_257_ways_3s_tuned"
+out_dir = "logs/log_alpha_Q_voxceleb1_S_voxmovies_257_ways_3s_tuned+2stage"
 if not os.path.exists(out_dir):
     os.mkdir(out_dir)
 
@@ -79,15 +82,20 @@ for k_shot in k_shots:
                                                 k_shot=k_shot,
                                                 seed=seed)
 
-            #test_embs, test_labels, test_audios = task_generator.sampler(test_dict,mode='query')
-            #enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict,mode='support')
-            test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(merged_dict)
-            enroll_embs, test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize)
+            test_embs, test_labels, test_audios = task_generator.sampler(test_dict,mode='query')
+            enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(enroll_dict,mode='support')
+            #test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(merged_dict)
+            #enroll_embs, test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize)
+            test_embs = embedding_normalize(test_embs,use_mean=use_mean)
+            enroll_embs = embedding_normalize(enroll_embs,use_mean=use_mean)
 
             acc = {}
             acc["simpleshot"] = []
             acc["paddle"] = {}
             acc["paddle"][str(tuned_alpha)] = []
+            acc['paddle_2stage'] = {}
+            acc['paddle_2stage'][str(tuned_alpha)] = []
+
             for start in tqdm(range(0,n_tasks,batch_size)):
                 end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
 
@@ -98,10 +106,10 @@ for k_shot in k_shots:
 
                 if n_ways_eff == 1:
                     eval = Simpleshot(avg="mean",backend="L2",method="transductive_centroid")
-                    acc_list = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end]) 
+                    acc_list,_,_ = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end]) 
                 else:
                     eval = Simpleshot(avg="mean",backend="L2",method="inductive")
-                    acc_list = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end]) 
+                    acc_list,_,_ = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end]) 
                 acc["simpleshot"].extend(acc_list)
 
                 if n_ways_eff == 1:
@@ -111,14 +119,20 @@ for k_shot in k_shots:
 
                 args['alpha'] = int(tuned_alpha)
                 method_info = {'device':'cuda','args':args}#'log_file':log_file,'args':args}
-                acc_list = run_paddle_new(x_s, y_s, x_q, y_q,method_info)
+                acc_list,_ = run_paddle_new(x_s, y_s, x_q, y_q,method_info)
                 acc["paddle"][str(tuned_alpha)].extend(acc_list)
+
+                if n_ways_eff == 1:
+                    acc_list = run_2stage_paddle(x_s, y_s, x_q, y_q, test_audios[start:end], method_info)                
+                    acc["paddle_2stage"][str(tuned_alpha)].extend(acc_list)
 
             final_json = {}
             final_json['simpleshot'] = 100*sum(acc["simpleshot"])/len(acc["simpleshot"])
             final_json['paddle'] = {}
+            final_json['paddle_2stage'] = {}
             
             final_json['paddle'][str(tuned_alpha)] = 100*sum(acc["paddle"][str(tuned_alpha)])/len(acc["paddle"][str(tuned_alpha)])
+            final_json['paddle_2stage'][str(tuned_alpha)] = 100*sum(acc["paddle_2stage"][str(tuned_alpha)])/len(acc["paddle_2stage"][str(tuned_alpha)])
 
             with open(out_file,'w') as f:
                 json.dump(final_json,f)

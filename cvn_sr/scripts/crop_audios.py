@@ -77,10 +77,12 @@ def generate_crop(input_dir, output_dir, crop_dur, min_utter):
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
     
-    verify_dir = os.path.isdir(os.path.join(input_dir,os.listdir(input_dir)[0]))
-
+    
+    verify_dir = any(os.path.isdir(os.path.join(input_dir, item)) for item in os.listdir(input_dir))
     if verify_dir:
         for dir in os.listdir(input_dir):
+            if "._" in dir:
+                continue
 
             in_utt_dir = os.path.join(input_dir,dir)
             out_utt_dir = os.path.join(output_dir,dir)
@@ -89,7 +91,13 @@ def generate_crop(input_dir, output_dir, crop_dur, min_utter):
                 os.mkdir(out_utt_dir)
             
             for file in os.listdir(in_utt_dir):
+                if "._" in file or ".mkv" in file:
+                    continue
                 file_in = os.path.join(in_utt_dir,file)
+                
+                if ".flac" in file:
+                    file = file.replace(".flac",".wav")
+
                 file_out = os.path.join(out_utt_dir,file)
                 crop_audio(file_in, file_out, target_duration=crop_dur)
     else:

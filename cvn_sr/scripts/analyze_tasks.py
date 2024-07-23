@@ -1,35 +1,17 @@
 import numpy as np
-#from utils.task_generator import Tasks_Generator
+from utils.task_generator import Tasks_Generator
 import torch
 import time
 from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
 from utils.utils import load_pickle, embedding_normalize, analyze_data
 from utils.paddle_utils import get_log_file,Logger,compute_confidence_interval
 from methods.paddle import PADDLE
-from methods.em_dirichlet import HARD_EM_DIRICHLET
 from tqdm import tqdm
 from methods.simpleshot import Simpleshot
 from omegaconf import OmegaConf
-from nemo.core.config import hydra_runner
 import os 
-
-def run_paddle_new(enroll_embs,enroll_labels,test_embs,test_labels,method_info):
-    x_q = torch.tensor(test_embs)
-    y_q = torch.tensor(test_labels).long().unsqueeze(2)
-    x_s = torch.tensor(enroll_embs)
-    y_s = torch.tensor(enroll_labels).long().unsqueeze(2)
-    
-    task_dic = {}
-    task_dic['y_s'] = y_s
-    task_dic['y_q'] = y_q
-    task_dic['x_s'] = x_s
-    task_dic['x_q'] = x_q
-    
-    method = PADDLE(**method_info)
-    logs = method.run_task(task_dic)
-    #acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
-
-    return logs['acc'][:,-1].tolist()
+from collections import Counter, defaultdict
+import sys
 
 #@hydra_runner(config_path="../conf", config_name="speaker_identification_fewshot.yaml")
 def main():
@@ -63,8 +45,77 @@ def main():
     print(labels.shape)
     analyze_data(labels)
         
+def main2():
+
+    #voxceleb1_path = sys.argv[1]
+    voxmovies_path = sys.argv[1]
+    
+    #input_dict2 = np.load(voxceleb1_path,allow_pickle=True)
+    input_dict = np.load(voxmovies_path,allow_pickle=True)
+
+    labels = input_dict['concat_labels']
+    label_counts = Counter(labels)
+    # Number of unique labels
+    num_unique_labels = len(label_counts)
+    unique_labels = set(labels)
+
+    # Minimum and maximum occurrences
+    min_occurrences = min(label_counts.values())
+    max_occurrences = max(label_counts.values())
+    avg = sum(label_counts.values())/len(label_counts)
+
+    #print(f"Number of samples in dataset: {len(labels)}")
+    #rint(f"Number of unique labels: {num_unique_labels}")
+    #print(f"Minimum number of occurrences: {min_occurrences}")
+    #print(f"Maximum number of occurrences: {max_occurrences}")
+    #print(f'Average number of occurences: {avg}')
+
+        # Get the top 10 labels with the least samples
+    least_common_labels = label_counts.most_common()[-120:]
+
+    # Create a dictionary to store indices for each label
+    label_indices = defaultdict(list)
+
+    # Populate the dictionary with indices for each label
+    for index, label in enumerate(labels):
+        label_indices[label].append(index)
+
+    # Create a result list containing label, count, and indices
+    result = []
+    for label, count in least_common_labels:
+        result.append({
+            'label': label,
+            'count': count,
+            'indices': label_indices[label]
+        })
+
+    # Print the result
+    for item in result:
+        print(f"Label: {item['label']}, Count: {item['count']}, Indices: {item['indices']}")
+
+    exit(0)
+
+    task_generator = Tasks_Generator(uniq_classes=unique_labels,
+                                            n_tasks=10,
+                                            n_ways=num_unique_labels,
+                                            n_ways_eff=3,
+                                            n_query=1,
+                                            k_shot=3,
+                                            seed=42)
         
-        
+    start_sample_support = time.time()
+    test_embs, test_labels, test_audios = task_generator.sampler(input_dict, mode="query")
+    enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(input_dict2, mode="support")
+    #test_embs, test_labels, test_audios,enroll_embs, enroll_labels, enroll_audios = task_generator.sampler_unified(input_dict)
+
+    print(test_audios.shape)
+    analyze_data(test_audios)
+    print(test_labels.shape)
+    analyze_data(test_labels)
+    print(enroll_audios.shape)
+    analyze_data(enroll_audios)
+    print(enroll_labels.shape)
+    analyze_data(enroll_labels)
 
 if __name__ == "__main__":
-    main()
+    main2()

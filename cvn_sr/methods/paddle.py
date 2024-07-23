@@ -9,7 +9,7 @@ import numpy as np
 
 class KM(object):
 
-    def __init__(self, device, log_file, args):
+    def __init__(self, device,args):#, log_file, args):
         self.device = device
         self.iter = args['iter']
         self.alpha = args['alpha']
@@ -18,8 +18,8 @@ class KM(object):
         else:
             self.maj_vote = False
         
-        self.log_file = log_file
-        self.logger = Logger(__name__, self.log_file)
+        #self.log_file = log_file
+        #self.logger = Logger(__name__, self.log_file)
         self.init_info_lists()
 
     def init_info_lists(self):
@@ -27,6 +27,7 @@ class KM(object):
         self.criterions = []
         self.test_acc = []
         self.test_acc_top5 = []
+        self.preds_q = []
 
     
     def get_logits(self, samples):
@@ -38,6 +39,7 @@ class KM(object):
         """
         diff = self.w.unsqueeze(1) - samples.unsqueeze(2)  # N x n x K x C
         logits = (diff.square_()).sum(dim=-1)
+
         return - 1 / 2 * logits  # N x n x K
 
     def init_w(self, support, y_s):
@@ -51,9 +53,11 @@ class KM(object):
         """
         n_tasks = support.size(0)
         one_hot = get_one_hot(y_s)
+
         counts = one_hot.sum(1).view(n_tasks, -1, 1)
         weights = one_hot.transpose(1, 2).matmul(support)
         self.w = weights / counts
+
 
     def record_convergence(self, new_time, criterions):
         """
@@ -70,6 +74,7 @@ class KM(object):
         inputs:
             y_q : torch.Tensor of shape [n_task, n_query] :
         """
+        #print(self.u)
         preds_q = self.u.argmax(2).to(torch.device('cpu'))
         y_q = y_q.to(torch.device('cpu'))
         #_,preds_q_top5 = torch.topk(self.u, k=5, dim=2, largest=True)
@@ -77,14 +82,18 @@ class KM(object):
         #most_common_values = top_k_most_common(preds_q_top5, k=5)
 
         #print(f"Paddle predictions: {preds_q}!!!")
+
         if self.maj_vote:
+            
             preds_q_maj = majority_or_original(preds_q)
             accuracy = (preds_q_maj == y_q).float().mean(1, keepdim=True)
-
+            #print(preds_q_maj)
+            #print(y_q)
             #result = torch.zeros((y_q_maj.shape[0], 1), dtype=torch.int)
             #for i in range(y_q_maj.shape[0]):
             #    if torch.any(most_common_values[i] == y_q_maj[i].item()):
             #        result[i] = 1
+            self.preds_q.append(preds_q_maj)
 
         else:
             accuracy = (preds_q == y_q).float().mean(1, keepdim=True)
@@ -94,6 +103,7 @@ class KM(object):
         #    print(y_q)
         #    print(accuracy)
         self.test_acc.append(accuracy)
+        
         #self.test_acc_top5.append(result)
         
 
@@ -103,7 +113,7 @@ class KM(object):
         self.test_acc = torch.cat(self.test_acc, dim=1).cpu().numpy()
         #self.test_acc_top5 = torch.cat(self.test_acc_top5, dim=1).cpu().numpy()
         return {'timestamps': self.timestamps, 'criterions':self.criterions,
-                'acc': self.test_acc}#,'acc_top5': self.test_acc_top5}
+                'acc': self.test_acc,'preds_q':self.preds_q}#,'acc_top5': self.test_acc_top5}
 
     def run_task(self, task_dic):
         """
@@ -135,11 +145,11 @@ class KM(object):
 
 class PADDLE(KM):
 
-    def __init__(self, device, log_file, args):
-        super().__init__(device=device, log_file=log_file, args=args)
+    def __init__(self, device,args):#, log_file, args):
+        super().__init__(device=device, args=args)#log_file=log_file, args=args)
 
-    def __del__(self):
-        self.logger.del_logger()
+    #def __del__(self):
+    #    self.logger.del_logger()
 
     def A(self, p):
         """
@@ -224,11 +234,11 @@ class PADDLE(KM):
         
         y_s_one_hot = get_one_hot(y_s)
         n_task, n_ways = y_s_one_hot.size(0), y_s_one_hot.size(2)
-        
+
         self.init_w(support=support, y_s=y_s)                           # initialize basic prototypes
         self.v = torch.zeros(n_task, n_ways).to(self.device)            # initialize v to vector of zeros
 
-        for i in tqdm(range(self.iter)):
+        for i in range(self.iter):#tqdm(range(self.iter)):
 
             w_old = self.w
             t0 = time.time()
