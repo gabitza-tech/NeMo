@@ -11,6 +11,7 @@ import yaml
 from ast import literal_eval
 import logging
 import copy
+from copy import deepcopy
 
 def top_k_most_common(tensor, k=5):
     top_k_values = []
@@ -27,6 +28,7 @@ def most_common_value(tensor):
 
 def get_one_hot(y_s):
     n_ways = torch.unique(y_s).size(0)
+
     eye = torch.eye(n_ways).to(y_s.device)
     one_hot = []
     for y_task in y_s:
@@ -479,3 +481,52 @@ def extract_mean_features(model, train_loader, args, logger, device):
         out_mean, fc_out_mean = load_pickle(save_dir + '/output_mean.plk')
         logger.info(" ==> Features loaded from {}".format(filepath_mean))
         return torch.from_numpy(out_mean), torch.from_numpy(fc_out_mean)
+    
+# Inverse Covariance Estimator : Graphical LASSO
+def prox_g(S, gamma):                                       # g(S) = -logdet(S)   
+    s, U = torch.linalg.eigh(S)                             # eighenvalues <-> determinant de matrice diagonalisable 
+    d = (s + torch.sqrt(s**2 + 4 * gamma)) / 2
+    P = (U * d.unsqueeze(-2)).matmul(U.transpose(-1, -2))
+    return P
+
+def prox_f(S, gamma):                                        # f(S) = lambda*sum_{i!=j}|Sij|
+    m = torch.diag(S.new_ones(S.size(-1), dtype=bool))       # True sur diagonale, False ailleurs
+    m_bar = ~m                                               # False sur diagonale, True ailleurs
+    S[..., m_bar] = F.softshrink(S[..., m_bar], lambd=gamma) # softshrink(x)=x-lambda if x-lambda>0, x+lambda if x+lambda>0, and 0 otherwise
+    S[..., m] = F.softshrink(S[..., m], lambd=0)             # useless i guess ?
+    return S
+
+def GLASSO(C, S_0, lambd, max_iter=20000, eps=5e-7):
+    """
+    inputs:
+        C : torch.Tensor of shape [feature_dim, feature_dim]
+        S_0 : torch.Tensor of shape [feature_dim, feature_dim]
+        lambd : scalar
+    """    
+    y_n = x_n = S_0.clone()
+    n_task, feature_dim = S_0.size(0), S_0.size(-1)
+    gamma = 1
+    lambda_n = 1
+    criterion = 1
+    i = 0
+    for i in range(max_iter):
+        x_n_plus_1 = prox_g(y_n - gamma * C, gamma)          # prox_gamma * g(y_n - gamma*C) = prox_{ gamma*g(.) + <C|.> } (y_n)   
+        #criterion = torch.norm(x_n_plus_1 - x_n)**2 / (feature_dim**2)
+        #if i % 100 == 0 and i > 0:
+        #    print("iter ", i, "criterion = ", criterion)
+        # if criterion < eps:
+        #     break
+        x_n = deepcopy(x_n_plus_1)
+        Z = prox_f(2 * x_n - y_n,  gamma * lambd)    
+        y_n = y_n + lambda_n * (Z - x_n)
+        criterion = torch.norm(Z - x_n)**2 / (feature_dim**2)
+        #print('criterion', criterion)
+        if criterion < eps:
+            break
+        
+    if i >= max_iter:
+        print("GLASSO stopped after max number of iterations")
+    else:
+        print("GLASSO completed in ", i, "iterations")
+    #return x_n
+    return Z

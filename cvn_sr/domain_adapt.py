@@ -14,7 +14,7 @@ from utils.utils import save_pickle
 from utils.utils import CL2N_embeddings, embedding_normalize
 from utils.paddle_utils import get_log_file,Logger
 from numpy.linalg import norm
-from utils.utils import plot_embeddings,class_compute_transform_A,class_compute_diagonal_A,class_compute_sums_A
+from utils.utils import coral,calculate_centroids,ana_A,iterative_A,plot_embeddings,class_compute_transform_A,class_compute_diagonal_A,class_compute_sums_A
 import sys
 import random
 import torch
@@ -24,14 +24,15 @@ from sklearn.manifold import TSNE
 from utils.utils import tsne_query_support
 from numpy.linalg import norm
 
+
 method = sys.argv[1]
 
 #query_file = 'saved_embs/voxceleb1_3s/voxceleb1_3s_query_ecapa_embs.pkl'#voxmovies_3s_ecapa_embs.pkl'#'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
 query_file = 'saved_embs/voxmovies_3s/voxmovies_3s_ecapa_embs.pkl'
 support_file = 'saved_embs/voxceleb1_3s/voxceleb1_3s_support_ecapa_embs.pkl'
 
-classes_file = 'datasets_splits/voxmovies_257_labels.txt'#'datasets_splits/voxceleb1_test_labels.txt'#
-test_classes_file = 'datasets_splits/voxmovies_257_labels.txt'
+classes_file = 'datasets_splits/voxmovies_domain_adapt.txt'#'datasets_splits/voxmovies_257_labels.txt'#'datasets_splits/voxceleb1_test_labels.txt'#
+test_classes_file = 'datasets_splits/voxmovies_257_labels.txt'#'datasets_splits/voxmovies_domain_adapt.txt'#
 
 test_dict = np.load(query_file, allow_pickle=True)
 enroll_dict = np.load(support_file, allow_pickle=True)   
@@ -42,13 +43,12 @@ with open(classes_file,'r') as f:
     for line in lines: 
         ids.append(line.strip())
 
+
 with open(test_classes_file,'r') as f:
     lines = f.readlines()
     test_ids = []
     for line in lines:
         test_ids.append(line.strip())
-
-#test_ids = test_ids[:20]
 
 labels_count = []
 indices_celeb = []
@@ -97,6 +97,10 @@ movies_dict_test['concat_labels'] = np.array(test_dict['concat_labels'])[indices
 movies_dict_test['concat_slices'] = np.array(test_dict['concat_slices'])[indices_movies_test]
 movies_dict_test['concat_patchs'] = np.array(test_dict['concat_patchs'])[indices_movies_test]
     
+print(movies_feat.shape)
+print(celeb_feat.shape)
+print(movies_dict_test['concat_features'].shape)
+
 out_dir = f'voxmovies_normalized_diagonal_validation_{method}'#"voxmovies_test_no_normalization"
 
 if not os.path.exists(out_dir):
@@ -105,8 +109,8 @@ if not os.path.exists(out_dir):
 start = time.time()
 
 seed = 42
-n_tasks = 100
-batch_size = 100
+n_tasks = 10000
+batch_size = 10000
 
 args={}
 args['iter']=20
@@ -118,14 +122,14 @@ random.seed(seed)
 torch.manual_seed(seed)
 np.random.seed(seed)
 
-alpha = 5
-n_q = 4
-k_shot = 2
+alpha = 1
+n_q = 3
+k_shot = 3
 n_ways_eff = 1
 
 #thetas = [100,90,80,70,60,50,40,30,2010,1,0.1,0,0.5,-0.5,-1,-5,-10,-100,9999]#[1000000,100000000,1000,100,10000,1,10,0.5,0,-1,-100,-1000.-1000000,-1500000]
 #thetas = [1000000000,100000000,10000000,1000000,100000,10000,1000,100,10,0,-10,-100,-1000,-10000,-100000,-1000000,-10000000,-100000000,-1000000000]#[9999,-1000000,-1500000,-1700000,-1300000,-1800000,-1900000,-2000000]
-thetas = []#[i for i in range(-200,-100,1)]#[i for i in range(800,900,1)]
+thetas = [1000]#[i for i in range(-200,-100,1)]#[i for i in range(800,900,1)]
 thetas.append("no_adapt")
 
 final_json = {}
@@ -151,16 +155,14 @@ if normalize == True:
     celeb_feat = embedding_normalize(celeb_feat,use_mean=use_mean)
     movies_feat = np.squeeze(movies_feat)
     celeb_feat = np.squeeze(celeb_feat)
-
+       
 if method == "diag":
     #A_matrix = class_compute_diagonal_A(movies_feat,movies_labels,celeb_feat,celeb_labels, 999)
     sum_up,sum_down = class_compute_sums_A(movies_feat,movies_labels,celeb_feat,celeb_labels)
+    
 elif method == "norm":
     #A_matrix = class_compute_transform_A(movies_feat,movies_labels,celeb_feat,celeb_labels, theta)
     sum_up,sum_down = class_compute_transform_A(movies_feat,movies_labels,celeb_feat,celeb_labels)
-
-print(sum_up)
-print(sum_down)
 
 
 movies_dict_adapted = {}
@@ -189,36 +191,10 @@ enroll_embs, enroll_labels, enroll_audios = task_generator.sampler(celeb_dict_te
 if normalize == True:
     #enroll_embs, initial_test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize,use_mean=True)    
     initial_test_embs = embedding_normalize(test_embs,use_mean=use_mean)
-    enroll_embs = embedding_normalize(enroll_embs,use_mean=use_mean)
+    initial_enroll_embs = embedding_normalize(enroll_embs,use_mean=use_mean)
 else:
     initial_test_embs = np.copy(test_embs)
-
-"""
-enroll_avg = np.average(enroll_embs.reshape(-1,192),0)
-test_avg = np.average(test_embs.reshape(-1,192),0)
-
-fig = plt.figure(figsize=(21, 7))
-plt.subplot(1, 2, 1)
-plt.hist(test_avg, bins=50, alpha=0.5, label='Movie new')
-plt.hist(enroll_avg, bins=50, alpha=0.5, label='Celeb')
-plt.legend(loc='upper right')
-plt.title(f'Histogram of Movie and Celeb for alpha:{theta}')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-
-# KDE plot
-plt.subplot(1, 2, 2)
-sns.kdeplot(test_avg, shade=True, label='Movie new')
-sns.kdeplot(enroll_avg, shade=True, label='Celeb')
-plt.legend(loc='upper right')
-plt.title(f'KDE of Movie and Celeb for alpha:{theta}')
-plt.xlabel('Value')
-plt.ylabel('Density')
-
-plt.tight_layout()
-#plt.show()
-fig.savefig(f'plot_task_alpha_val_{method}_{theta}.png')
-"""
+    initial_test_embs = np.copy(enroll_embs)
 
 for theta in thetas:
     acc = {}
@@ -227,17 +203,42 @@ for theta in thetas:
     acc["paddle"] = []
     
     test_embs= np.copy(initial_test_embs)
-    A_matrix = np.zeros((192,192))
+    enroll_embs = np.copy(initial_enroll_embs)
+    #A_matrix = np.zeros((192,192))
     if theta != "no_adapt":
-        for j in range(test_embs.shape[-1]):       
-            A_matrix[j,j] = sum_up[j][j]/(sum_down[j][j]+theta)
-        print(A_matrix)
+    #    for j in range(test_embs.shape[-1]):       
+    #        A_matrix[j,j] = sum_up[j][j]/(sum_down[j][j]+theta)
+    #   print(A_matrix)
         #sum_down_x = sum_down + np.eye(192)*theta
         #matrix_inverse = np.linalg.inv(sum_down_x)
         #A_matrix = np.matmul(sum_up,matrix_inverse)
-        test_embs = np.matmul(test_embs, A_matrix.T)
+        #test_embs = np.matmul(test_embs, A_matrix.T)
+        # Iterative A
+        # Voxceleb closer to VoxMovies
+        sampled_classes=sorted(list(set(celeb_labels)))
+        sampled_classes_dict = {label:i for i,label in enumerate(sampled_classes)}
+        print('--')
+        mu = calculate_centroids(movies_feat,movies_labels)#(celeb_feat,celeb_labels)#
+        processed_labels_q = []
+        for label in celeb_labels:#movies_labels:#
+            processed_labels_q.append(sampled_classes_dict[label])
+        processed_labels_q = np.array(processed_labels_q)    
+        mu_N = []
+        for label in processed_labels_q:
+            mu_N.append(mu[label])
+        mu_N = np.array(mu_N)
+        print('!!')
 
-
+        #A, As, crit = iterative_A(celeb_feat,mu_N,alpha=theta)
+        #enroll_embs = enroll_embs @ A.astype(np.float32).T
+        #test_embs = test_embs @ A.astype(np.float32).T
+        #enroll_embs = enroll_embs @ A.T.astype(np.float32)
+        # Coral adaptation
+        A = coral(movies_feat,celeb_feat,theta)
+        test_embs = test_embs @ A.astype(np.float32).T
+        #A = coral(celeb_feat,movies_feat,theta)
+        #enroll_embs = enroll_embs @ A.astype(np.float32).T
+              
     for start in tqdm(range(0,n_tasks,batch_size)):
         end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
         
@@ -276,8 +277,7 @@ for theta in thetas:
             count_simple += 1
         if acc['paddle'][i] > acc['simpleshot'][i]:
             count_paddle += 1
-    print(count_simple)
-    print(count_paddle)
+
     
     new_x_s = []
     new_y_s = []
@@ -289,12 +289,12 @@ for theta in thetas:
         task_y_s = []
         if True:#acc_list[i] < acc_list_5[i]:
             top_classes = pred_labels_5[i][0].tolist()
-            print(top_classes)
+            #print(top_classes)
             #tsne_query_support(x_q[i],x_s[i],y_q[i],y_s[i],top_classes)
             
             classes_dict = {str(label):i for i,label in enumerate(top_classes)}
 
-            print(f"Task: {i}")
+            #print(f"Task: {i}")
             
             for label in sorted(top_classes):
                 top_indices = np.where(y_s[i] == label)
@@ -342,8 +342,8 @@ for theta in thetas:
             task_preds.append(original_top_5[pred])
         original_preds_q.append(task_preds)
     
-    print(original_preds_q)
-    print(y_q)
+    #print(original_preds_q)
+    #print(y_q)
     acc_list_stage2 = compute_acc(torch.tensor(original_preds_q),torch.tensor(new_y_q))
  
     stage2_acc_list.extend(acc_list_stage2)

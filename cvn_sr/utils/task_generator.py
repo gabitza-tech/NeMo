@@ -35,6 +35,7 @@ class Tasks_Generator:
 
         self.support_classes = []
         self.query_classes = []
+
         for i in range(n_tasks):
             sampled_classes=sorted(random.sample(self.uniq_classes, n_ways))
             self.support_classes.append(sampled_classes)
@@ -107,3 +108,124 @@ class Tasks_Generator:
 
         return out_embs, out_labels, out_slices
 
+    def sampler_unified(self, data_dict):
+        """
+        Every time I sample, I set the seed.. sometimes it doesn't pick the same samples 
+        when I use the sampler second time with a different batch size. 
+        Setting the seed everytime removes this problem
+        """
+        #set_seed(self.seed)
+        """
+        There are 2 modes: query and support. Depending on the mode, we either load the sampled support/query classes for n_tasks
+        """
+        support_embs = []
+        support_labels = []
+        support_slices = []
+        support_embs2 = []
+        support_labels2 = []
+        support_slices2 = []
+        query_embs = []
+        query_labels = []
+        query_slices = []
+
+        only_support_classes = [[x for x in self.support_classes[task] if x not in self.query_classes[task]] for task,sup_classes in enumerate(self.support_classes)]
+          
+        for task, sampled_classes in tqdm(enumerate(only_support_classes)):
+            # Get indices of samples that are part of the sampled classes in the support for this task.
+            # The query must use the same indices as the support!
+            self.label_dict = {label:i for i,label in enumerate(self.support_classes[task])}
+            # Get the indices where elements in concat_labels are in sampled_classes
+            data_label_indices = np.where(np.isin(np.array(data_dict['concat_labels']), sampled_classes))[0].tolist()
+            
+            all_labels = np.asarray(data_dict['concat_labels'])[data_label_indices]
+            all_slices = np.asarray(data_dict['concat_slices'])[data_label_indices]
+            all_patchs = np.asarray(data_dict['concat_patchs'])[data_label_indices]
+            all_embs = np.asarray(data_dict['concat_features'])[data_label_indices]
+
+            combined_array = np.column_stack((all_labels, all_slices))
+            unique_pairs, inverse_indices = np.unique(combined_array, axis=0, return_inverse=True)
+
+            random_pairs = [(label, np.random.choice(unique_pairs[unique_pairs[:, 0] == label, 1], size=self.k_shot, replace=False)) for label in sorted(sampled_classes)]
+            random_pairs_array = np.concatenate([[[label, id_] for id_ in ids] for label, ids in random_pairs])
+
+            data_indices = np.array(find_matching_positions(combined_array, random_pairs_array))
+
+            data_embs = all_embs[data_indices]
+            data_labels = all_labels[data_indices]
+            data_labels = np.asarray([self.label_dict[label] for label in data_labels])
+            
+            data_slices = all_slices[data_indices]
+
+            support_embs.append(data_embs)
+            support_labels.append(data_labels)
+            support_slices.append(data_slices)
+
+        for task, sampled_classes in tqdm(enumerate(self.query_classes)):
+            
+
+            # Get indices of samples that are part of the sampled classes in the support for this task.
+            # The query must use the same indices as the support!
+            self.label_dict = {label:i for i,label in enumerate(self.support_classes[task])}
+            # Get the indices where elements in concat_labels are in sampled_classes
+            data_label_indices = np.where(np.isin(np.array(data_dict['concat_labels']), sampled_classes))[0].tolist()
+            
+            all_labels = np.asarray(data_dict['concat_labels'])[data_label_indices]
+            all_slices = np.asarray(data_dict['concat_slices'])[data_label_indices]
+            all_patchs = np.asarray(data_dict['concat_patchs'])[data_label_indices]
+            all_embs = np.asarray(data_dict['concat_features'])[data_label_indices]
+
+            combined_array = np.column_stack((all_labels, all_slices))
+            unique_pairs, inverse_indices = np.unique(combined_array, axis=0, return_inverse=True)
+
+            random_pairs = [(label, np.random.choice(unique_pairs[unique_pairs[:, 0] == label, 1], size=(self.k_shot+self.n_query), replace=False)) for label in sorted(sampled_classes)]
+            random_pairs_array = np.concatenate([[[label, id_] for id_ in ids] for label, ids in random_pairs])
+
+            data_indices = np.array(find_matching_positions(combined_array, random_pairs_array))
+
+            data_embs = all_embs[data_indices]
+            data_labels = all_labels[data_indices]
+            data_labels = np.asarray([self.label_dict[label] for label in data_labels])
+            
+            data_slices = all_slices[data_indices]
+
+            class_s_embs2 =[]
+            class_s_labels2 =[]
+            class_s_slices2 =[]
+            class_q_embs2 =[]
+            class_q_labels2 =[]
+            class_q_slices2 =[]
+            for label in self.query_classes[task]:
+                label = self.label_dict[label]
+                indices = np.where(data_labels == label)
+
+                class_s_embs2.extend(data_embs[indices][:self.k_shot])
+                class_s_labels2.extend(data_labels[indices][:self.k_shot])
+                class_s_slices2.extend(data_slices[indices][:self.k_shot])
+
+                class_q_embs2.extend(data_embs[indices][self.k_shot:])
+                class_q_labels2.extend(data_labels[indices][self.k_shot:])
+                class_q_slices2.extend(data_slices[indices][self.k_shot:])
+
+            support_embs2.append(class_s_embs2)
+            support_labels2.append(class_s_labels2)
+            support_slices2.append(class_s_slices2)
+            query_embs.append(class_q_embs2)
+            query_labels.append(class_q_labels2)
+            query_slices.append(class_q_slices2)
+
+        support_embs = np.array(support_embs)
+        support_labels = np.array(support_labels)
+        support_slices = np.array(support_slices)
+        support_embs2 = np.array(support_embs2)
+        support_labels2 = np.array(support_labels2)
+        support_slices2 = np.array(support_slices2)
+
+        support_embs = np.concatenate((support_embs,support_embs2),axis=1)
+        support_labels = np.concatenate((support_labels,support_labels2),axis=1)
+        support_slices = np.concatenate((support_slices,support_slices2),axis=1)
+
+        query_embs = np.array(query_embs)
+        query_labels = np.array(query_labels)
+        query_slices = np.array(query_slices)
+
+        return query_embs, query_labels, query_slices,support_embs,support_labels,support_slices
