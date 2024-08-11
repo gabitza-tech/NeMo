@@ -126,8 +126,6 @@ class Simpleshot():
       
         if self.backend == "cosine":
             print("Using SimpleShot inductive method with cosine similarity backend")
-            print(test_embs.shape)
-            print(avg_enroll_embs.shape)
             
             avg_enroll_embs = torch.from_numpy(embedding_normalize(avg_enroll_embs.numpy(),use_mean=True))
             scores = torch.einsum('ijk,ilk->ijl', test_embs, avg_enroll_embs)
@@ -175,7 +173,7 @@ class Simpleshot():
 
             scores = torch.einsum('ijk,ilk->ijl', avg_test_embs, avg_enroll_embs).repeat(1,n_query,1)
             pred_labels = torch.argmax(scores, dim=-1).long()
-            _,pred_labels_top5 = torch.topk(scores, k=5, dim=-1, largest=True)
+            _,pred_labels_top5 = torch.topk(scores, k=10, dim=-1, largest=True)
             
         else:
             print("Using SimpleShot transductive centroid method with L2 norm backend.")
@@ -188,7 +186,7 @@ class Simpleshot():
             C_l = torch.sum(dist,dim=-1).repeat(1,n_query,1) # [n_tasks,n_query,1251]
 
             pred_labels = torch.argmin(C_l, dim=-1).long()
-            _,pred_labels_top5 = torch.topk(C_l, k=15, dim=-1, largest=False)
+            _,pred_labels_top5 = torch.topk(C_l, k=5, dim=-1, largest=False)
 
         return pred_labels, pred_labels_top5
     
@@ -215,7 +213,7 @@ class Simpleshot():
         C_l = torch.unsqueeze(torch.sum(dist,dim=1),dim=1).repeat(1,n_query,1) # [n_tasks, 1251]
 
         pred_labels = torch.argmin(C_l, dim=-1).long()
-        _,pred_labels_top5 = torch.topk(C_l, k=5, dim=-1, largest=False)
+        _,pred_labels_top5 = torch.topk(C_l, k=10, dim=-1, largest=False)
         
         return pred_labels, pred_labels_top5
     

@@ -38,7 +38,6 @@ def simpleshot_inductive(enroll_embs,enroll_labels,test_embs,avg="mean",backend=
         avg_enroll_embs.append(task_enroll_embs)
 
     avg_enroll_embs = np.asarray(avg_enroll_embs)
-    print(avg_enroll_embs.shape)    
 
     
     if backend == "cosine":
@@ -119,7 +118,6 @@ def run_paddle(enroll_embs,enroll_labels,test_embs,test_labels,k_shot,method_inf
         acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
 
         # Mean accuracy per batch
-        print(acc_sample)
         acc_mean_list.append(acc_sample*len_batch)
         
     avg_acc_task = sum(acc_mean_list)/test_labels.shape[0]
@@ -163,8 +161,7 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
     query_batch = int(batch_size)
     acc_mean_list = []
     acc_mean_list_top5 = []
-    print(query_batch)
-    print(test_labels.shape[0])
+
     for j in tqdm(range(0,test_labels.shape[0],query_batch)):
         
         end = j+query_batch
@@ -174,7 +171,6 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
             end = j+1
 
         len_batch = end - j
-        print(len_batch)
 
         x_q = torch.tensor(test_embs[j:end])
         y_q = torch.tensor(test_labels[j:end]).long().unsqueeze(1).unsqueeze(2).repeat(1,x_q.shape[1],1) # It can also work with a shape of [len_batch,1,1] (repeat operation is not needed, but it is nicer and clearer in this way)
@@ -187,10 +183,6 @@ def run_paddle_transductive(enroll_embs,enroll_labels,test_embs,test_labels,k_sh
         task_dic['x_s'] = x_s
         task_dic['x_q'] = x_q
 
-        print(x_q.shape)
-        print(y_q.shape)
-        print(x_s.shape)
-        print(y_s.shape)
         
         method = PADDLE(**method_info)
         logs = method.run_task(task_dic)
@@ -447,7 +439,7 @@ def run_paddle_new(enroll_embs,enroll_labels,test_embs,test_labels,method_info,m
     task_dic['y_q'] = y_q
     task_dic['x_s'] = x_s
     task_dic['x_q'] = x_q
-    print("CEEE")
+
     if method == 'glasso':
         print("GLASSO")
         method = PADDLE_GLASSO(**method_info)
@@ -460,53 +452,55 @@ def run_paddle_new(enroll_embs,enroll_labels,test_embs,test_labels,method_info,m
         logs = method.run_task(task_dic=task_dic)
         
     #acc_sample, _ = compute_confidence_interval(logs['acc'][:, -1])
-
     return logs['acc'][:,-1].tolist(),logs['preds_q']
 
 def run_2stage_paddle(enroll_embs,enroll_labels,test_embs,test_labels, test_audios,method_info):
 
     eval = Simpleshot(avg="mean",backend="L2",method="transductive_centroid")
-    _, acc_list_5, pred_labels_5 = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels, test_audios) 
+    acc_list, acc_list_5, pred_labels_5 = eval.eval(enroll_embs, enroll_labels, test_embs, test_labels, test_audios) 
 
     new_x_s = []
     new_y_s = []
-
-    for i in range(len(pred_labels_5)):
+    new_x_q = []
+    new_y_q = []
+    stage2_acc_list = []
+    for i in range(len(acc_list_5)):
         task_x_s = []
         task_y_s = []
+        
         top_classes = pred_labels_5[i][0].tolist()
-        #print(top_classes)
-        
         classes_dict = {str(label):i for i,label in enumerate(top_classes)}
-        #print(f"Task: {i}")
-        
+
         for label in sorted(top_classes):
-            top_indices = np.where(enroll_labels[i] == label)
+            top_indices = np.where(enroll_labels[i] == label)            
             task_x_s.extend(enroll_embs[i][top_indices[0]])
             task_y_s.extend(np.array([classes_dict[str(label)] for label in enroll_labels[i][top_indices[0]]]))
-            
+
         task_x_s = np.array(task_x_s)
         task_y_s = np.array(task_y_s)
         new_x_s.append(task_x_s)
         new_y_s.append(task_y_s)
+        new_x_q.append(test_embs[i])
+        new_y_q.append(np.array(test_labels[i]))
 
+    
     new_x_s = np.array(new_x_s)
     new_y_s = np.array(new_y_s)
+    new_x_q = np.array(new_x_q)
+    new_y_q = np.array(new_y_q)
 
-    _, preds_q = run_paddle_new(new_x_s, new_y_s, test_embs, test_labels,method_info,method='glasso')
-    
+    acc_list, preds_q = run_paddle_new(new_x_s, new_y_s, new_x_q, new_y_q,method_info,'glasso')
+    print(preds_q)
     preds_q = preds_q[0].tolist()
-
     original_preds_q = []
     for task in range(len(preds_q)):
         task_preds = []
         for pred in preds_q[task]:
             original_top_5 = pred_labels_5[task][0].tolist()
-
             task_preds.append(original_top_5[pred])
+
         original_preds_q.append(task_preds)
     
-    acc_list_stage2 = compute_acc(torch.tensor(original_preds_q),torch.tensor(test_labels))
-
+    acc_list_stage2 = compute_acc(torch.tensor(original_preds_q),torch.tensor(new_y_q))
+ 
     return acc_list_stage2
-    

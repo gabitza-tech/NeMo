@@ -124,7 +124,7 @@ def main(cfg):
 
         args['maj_vote'] = True
         
-        method_info = {'device':'cuda','log_file':log_file,'args':args}
+        method_info = {'device':'cpu','log_file':log_file,'args':args}
         if cfg.method == "simpleshot":
             pred_labels, pred_labels_top5 = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, avg=cfg.avg, backend=cfg.backend)
             acc,acc_top5 = compute_acc(pred_labels,pred_labels_top5,test_labels,sampled_classes)

@@ -18,13 +18,12 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 import os
-
+from tqdm import tqdm
 from nemo.core.config import hydra_runner
 import random
 import logging
-from nemo.collections.asr.parts.utils.speaker_utils import embedding_normalize
 import time
-from utils.utils import load_pickle, sampler_query,sampler_support, compute_acc
+from utils.utils import load_pickle,sampler_query,sampler_support, sampler_windows_query,sampler_windows_support, compute_acc,embedding_normalize
 from methods.methods import simpleshot
 
 def setup_logger(log_file):
@@ -57,7 +56,7 @@ This script only needs data.enrollment_embs, data.test_embs, n_way, k_shot
 @hydra_runner(config_path="../conf", config_name="speaker_identification_fewshot")
 def main(cfg):
 
-    logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
+    #logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
     # Create logger file
     if cfg.data.out_file is not None:
@@ -98,20 +97,33 @@ def main(cfg):
         # We sample cfg.n_way classes out of the total number of classes
         sampled_classes = sorted(random.sample(uniq_classes, cfg.n_way))
 
-        test_embs,test_labels = sampler_query(test_dict, sampled_classes)
-        print(test_embs.shape)
-        enroll_embs, enroll_labels = sampler_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
+        test_embs,test_labels = sampler_windows_query(test_dict, sampled_classes)
+
+        enroll_embs, enroll_labels = sampler_windows_support(enroll_dict,sampled_classes,k_shot=cfg.k_shot)
         print(enroll_embs.shape)
+        if len(test_embs.shape) == 3:
+            test_embs = test_embs.squeeze(1)
         
+        #print(test_embs[0])
+        #print(enroll_embs[0])
+
+        """
         # Choose to normalize embeddings or not
         if cfg.normalize == True:
             #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
             enroll_embs = embedding_normalize(enroll_embs)
             #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
             test_embs = embedding_normalize(test_embs)
+        """
+        if cfg.normalize == True:
+            
+            all_embs = np.concatenate((enroll_embs,test_embs),axis=0)
+            all_embs = embedding_normalize(all_embs)
+            enroll_embs = all_embs[:enroll_embs.shape[0]]
+            test_embs = all_embs[enroll_embs.shape[0]:]
         
-        
-        pred_labels = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, method=cfg.method)
+
+        pred_labels = simpleshot(enroll_embs, enroll_labels, test_embs, sampled_classes, avg=cfg.avg, backend=cfg.backend)
         acc = compute_acc(test_labels,pred_labels,sampled_classes)
 
         task_accs.append(acc)

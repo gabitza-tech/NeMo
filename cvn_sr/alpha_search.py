@@ -15,35 +15,40 @@ from utils.utils import CL2N_embeddings,embedding_normalize
 from methods.paddle import PADDLE
 from utils.paddle_utils import get_log_file,Logger
 
-query_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'#'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
+query_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
 support_file = 'datasets_splits/embeddings/voxceleb1_3s_movies_ecapa_embs_257.pkl'
-enroll_dict = np.load(support_file, allow_pickle=True)
 test_dict = np.load(query_file, allow_pickle=True)
-#merged_dict = {}
-#for key in enroll_dict.keys():
-#    merged_dict[key] = np.concatenate((enroll_dict[key],test_dict[key]),axis=0)
-#dataset_file = 'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'#'datasets_splits/embeddings/voxceleb1_3s_val_ecapa_embs.pkl'#'datasets_splits/embeddings/voxmovies_3s_ecapa_embs_257.pkl'
+enroll_dict = np.load(support_file, allow_pickle=True)   
+
+#dataset_file = 'datasets_splits/embeddings/cnceleb1_3s_ecapa_embs.pkl'#'datasets_splits/embeddings/voxceleb1_3s_val_ecapa_embs.pkl'
 #merged_dict = np.load(dataset_file,allow_pickle=True)
 
 seed = 42
-n_tasks = 1000
+n_tasks = 10000
 batch_size = 100
+
+args={}
+args['iter']=20
 
 normalize = True
 use_mean = True
 
-args={}
-args['iter']=30
+random.seed(seed)
+torch.manual_seed(seed)
+np.random.seed(seed)
 
-alphas = [i for i in range(0,20)]#[i for i in range(0, 16) if i % 3 == 0 or i % 5 == 0]
-n_queries = [5,3,1]#[5,3,1]
-k_shots = [5,3,1]#[5,3,1]
-n_ways_effs = [1]#[5,3,1]
+alphas = [5]#[i for i in range(0,20)]#[i for i in range(0, 16) if i % 3 == 0 or i % 5 == 0]
+alphas_glasso = [100]#[0,10,100,1000,10000,100000,1000000]
+n_queries = [5,3,1]
+k_shots = [3,5,1]
+n_ways_effs = [1]
 
 uniq_classes = sorted(list(set(enroll_dict['concat_labels'])))
 #uniq_classes = sorted(list(set(merged_dict['concat_labels'])))
 
-out_dir = "log_alpha_voxmovies_257_ways_3s_2stage"#Q_voxceleb1_S_movies_257_ways_3s"
+out_dir = "log_alpha_voxmovies_257_ways_3s_2stage_10k"
+#out_dir = 'log_cnceleb1_2stage'#'log_alpha_voxceleb1_val_3s_2stage'
+
 if not os.path.exists(out_dir):
     os.mkdir(out_dir)
 
@@ -51,12 +56,15 @@ for k_shot in k_shots:
     for n_ways_eff in n_ways_effs:
         for n_query in n_queries:
             
+            alphas = [n_query]
+
             out_filename = f'k_{k_shot}_neff_{n_ways_eff}_nq_{n_query}.json'
             out_file = os.path.join(out_dir,out_filename)
             
             task_generator = Tasks_Generator(uniq_classes=uniq_classes,
                                                 n_tasks=n_tasks,
-                                                n_ways=len(set(enroll_dict['concat_labels'])),
+                                                n_ways=len(uniq_classes),
+                                                #n_ways=len(set(enroll_dict['concat_labels'])),
                                                 n_ways_eff=n_ways_eff,
                                                 n_query=n_query,
                                                 k_shot=k_shot,
@@ -72,12 +80,12 @@ for k_shot in k_shots:
 
             acc = {}
             acc["simpleshot"] = []
-            
             acc["paddle"] = {}
             acc['paddle_2stage'] = {}
             for alpha in alphas:
                 acc["paddle"][str(alpha)] = []
-                acc['paddle_2stage'][str(alpha)] = []
+            for alpha_glasso in alphas_glasso:
+                acc['paddle_2stage'][str(alpha_glasso)] = []
 
             for start in tqdm(range(0,n_tasks,batch_size)):
                 end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
@@ -95,35 +103,41 @@ for k_shot in k_shots:
                     acc_list,_,_ = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end]) 
                 acc["simpleshot"].extend(acc_list)
 
-                if n_ways_eff == 1:
-                    args['maj_vote'] = True
-                else:
-                    args['maj_vote'] = False
-
                 for alpha in alphas:
+                    if n_ways_eff == 1:
+                        args['maj_vote'] = True
+                    else:
+                        args['maj_vote'] = False
+
                     args['alpha'] = alpha
-                    method_info = {'device':'cpu','args':args}#'log_file':log_file,'args':args}
-            
-                    acc_list,_ = run_paddle_new(x_s, y_s, x_q, y_q,method_info)                
+                    method_info = {'device':'cuda','args':args}
+                    acc_list,_ = run_paddle_new(x_s, y_s, x_q, y_q,method_info,'paddle')                
                     acc["paddle"][str(alpha)].extend(acc_list)
 
+                for alpha_glasso in alphas_glasso:
+                    if n_ways_eff == 1:
+                        args['maj_vote'] = True
+                    else:
+                        args['maj_vote'] = False
+                    
+                    args['alpha'] = alpha_glasso
+                    method_info = {'device':'cuda','args':args}
+                    start_time = time.time()
                     if n_ways_eff == 1:
                         acc_list = run_2stage_paddle(x_s, y_s, x_q, y_q, test_audios[start:end], method_info)                
-                        acc["paddle_2stage"][str(alpha)].extend(acc_list)
-
+                        acc["paddle_2stage"][str(alpha_glasso)].extend(acc_list)
+                    dur = time.time() - start_time
                     
+
             final_json = {}
             final_json['simpleshot'] = 100*sum(acc["simpleshot"])/len(acc["simpleshot"])
             final_json['paddle'] = {}
             final_json['paddle_2stage'] = {}
-            #print(acc['simpleshot'])
 
             for alpha in alphas:
-                #print(acc['paddle'])
                 final_json['paddle'][str(alpha)] = 100*sum(acc["paddle"][str(alpha)])/len(acc["paddle"][str(alpha)])
 
-            for alpha in alphas:
-                #print(acc['paddle_2stage'][str(alpha)])
+            for alpha in alphas_glasso:
                 final_json['paddle_2stage'][str(alpha)] = 100*sum(acc["paddle_2stage"][str(alpha)])/len(acc["paddle_2stage"][str(alpha)])
 
 

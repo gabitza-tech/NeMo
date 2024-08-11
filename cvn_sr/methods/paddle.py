@@ -87,12 +87,6 @@ class KM(object):
             
             preds_q_maj = majority_or_original(preds_q)
             accuracy = (preds_q_maj == y_q).float().mean(1, keepdim=True)
-            #print(preds_q_maj)
-            #print(y_q)
-            #result = torch.zeros((y_q_maj.shape[0], 1), dtype=torch.int)
-            #for i in range(y_q_maj.shape[0]):
-            #    if torch.any(most_common_values[i] == y_q_maj[i].item()):
-            #        result[i] = 1
             self.preds_q.append(preds_q_maj)
 
         else:

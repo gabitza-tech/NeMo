@@ -39,7 +39,7 @@ This script only needs data.enrollment_embs, data.test_embs, n_way, k_shot
 @hydra_runner(config_path="../conf", config_name="paddle_identification_fewshot.yaml")
 def main(cfg):
 
-    logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
+    #logging.info(f'Hydra config: {OmegaConf.to_yaml(cfg)}')
 
     # init logger
     if cfg.data.out_file is None:
@@ -69,6 +69,8 @@ def main(cfg):
     random_numbers = [int(random.uniform(0,10000)) for _ in range(cfg.n_tasks)]
 
     task_accs = []
+    alphas = [i for i in range(10,30,4)]
+
     for i in range(cfg.n_tasks):
         
         # Randomly select the classes to be analyzed and the files from each class
@@ -89,24 +91,38 @@ def main(cfg):
         duration_sampling = time.time() - task_start_time     
         print(duration_sampling)
 
+        """
         # Choose to normalize embeddings or not
         if cfg.normalize == True:
             #enroll_embs = enroll_embs / (np.linalg.norm(enroll_embs, ord=2, axis=-1, keepdims=True))
             enroll_embs = embedding_normalize(enroll_embs)
             #test_embs = test_embs / (np.linalg.norm(test_embs, ord=2, axis=-1, keepdims=True))
             test_embs = embedding_normalize(test_embs)
-
-        args={}
-        args['iter']=20
-        args['alpha']=test_embs.shape[1]
-        print(f"Alpha is equal to {args['alpha']}.")
-        args['maj_vote'] = True
-        method_info = {'device':'cuda','log_file':log_file,'args':args}
         """
-        avg_acc_task = run_paddle_transductive(enroll_embs,
-                                  enroll_labels,
-                                  test_embs,
-                                  test_labels,
+
+        if cfg.normalize == True:
+            initial_shape = test_embs.copy().shape
+            if len(initial_shape) == 3:
+                test_embs =test_embs.reshape((-1, test_embs.shape[-1]))
+            all_embs = np.concatenate((enroll_embs,test_embs),axis=0)
+            all_embs = embedding_normalize(all_embs)
+            enroll_embs = all_embs[:enroll_embs.shape[0]]
+            test_embs = all_embs[enroll_embs.shape[0]:]
+            if len(initial_shape) == 3:
+                test_embs = test_embs.reshape(initial_shape)
+        
+        
+        args={}
+        args['iter']=30
+        args['alpha']=40#alphas[i]
+        print(f"Alpha is equal to {args['alpha']}.")
+        args['maj_vote'] = False
+        method_info = {'device':'cuda','log_file':log_file,'args':args}
+        
+        avg_acc_task = run_paddle_transductive(enroll_embs[:10000],
+                                  enroll_labels[:10000],
+                                  test_embs[:10000],
+                                  test_labels[:10000],
                                   cfg.k_shot,
                                   method_info,
                                   cfg.batch_size)
@@ -118,7 +134,7 @@ def main(cfg):
                                   cfg.k_shot,
                                   method_info,
                                   cfg.batch_size)
-        
+        """
         logger.info(f"Accuracy for task {i} is {avg_acc_task}%.")
         computing_duration = time.time() - task_start_time
         print(f"Time taken by task {i} is {computing_duration} s")
@@ -126,7 +142,7 @@ def main(cfg):
         
     final_avg_acc,final_conf_score = compute_confidence_interval(task_accs)
     logger.info(f"Final Acc for all tasks is {final_avg_acc} and confidence interval:{final_conf_score}")
-
+    print(task_accs)
 
 if __name__ == '__main__':
     main()

@@ -9,6 +9,7 @@ from sklearn.manifold import TSNE
 import logging
 from scipy.linalg import fractional_matrix_power
 from scipy.sparse.linalg import eigs
+import torch.nn.functional as F
 
 def setup_logger(log_file):
     # Create a logger
@@ -767,6 +768,45 @@ def class_compute_sums_A(x_q,y_q,x_s,y_s):
 
     return sum_up,sum_down
 
+def huber_loss(input, target, delta=0.5):
+    error = input - target
+    abs_error = torch.abs(error)
+    quadratic = torch.min(abs_error, torch.tensor(delta))
+    linear = abs_error - quadratic
+    loss = 0.5 * quadratic**2 + delta * linear
+    return loss.mean()
+
+def median_absolute_deviation(data):
+    """
+    Calculate the Median Absolute Deviation (MAD) of the data.
+    
+    Parameters:
+    data (np.ndarray): Input data.
+    
+    Returns:
+    float: The MAD of the data.
+    """
+    median = np.median(data)
+    mad = np.median(np.abs(data - median))
+    return mad
+
+def choose_delta_robust(y_true, y_pred, k=1.0):
+    """
+    Choose delta parameter for Huber loss based on the Median Absolute Deviation (MAD) of the errors.
+    
+    Parameters:
+    y_true (np.ndarray): True values.
+    y_pred (np.ndarray): Predicted values.
+    k (float): A constant to scale the MAD.
+    
+    Returns:
+    float: The chosen delta value.
+    """
+    error = y_true - y_pred
+    mad = median_absolute_deviation(error)
+    delta = k * mad
+    return delta
+
 def iterative_A(x_q,mu_N, alpha=0, seuil=1e-2, nitm=5000, prec=[1e-4, 1e-4]):
  
     N = x_q.shape[-1]
@@ -785,13 +825,21 @@ def iterative_A(x_q,mu_N, alpha=0, seuil=1e-2, nitm=5000, prec=[1e-4, 1e-4]):
     A = np.eye(N)
     indA = np.where(A == 0)
 
+    delta_robust = choose_delta_robust(x_q, mu_N, k=1.0)
+    print(delta_robust)
+
     crit = []
     for nit in range(nitm):
-        crit_val = np.linalg.norm(x_q @ A.T - mu_N, 'fro') ** 2 / 2 + alpha * np.sum(np.abs(A))
+        #crit_val = np.linalg.norm(x_q @ A.T - mu_N, 'fro') ** 2 / 2 + alpha * np.sum(np.abs(A))
+        data = x_q @ A.T
+        crit_val = F.huber_loss(torch.tensor(data,dtype=torch.float32), torch.tensor(mu_N,dtype=torch.float32),reduction="mean") ** 2 / 2 + alpha * np.sum(np.abs(A))
+        #crit_val = huber_loss(torch.tensor(data,dtype=torch.float32), torch.tensor(mu_N,dtype=torch.float32),delta=delta_robust) ** 2 / 2 + alpha * np.sum(np.abs(A))
+        crit_val = crit_val.item()
+        
         crit.append(crit_val)
         logger.info(f'{nit + 1} : crit = {crit_val}')
 
-        grad = A @ Rc.T - Rd
+        grad = A @ Rc.T - Rd # CHANGEEEE
         A = A - gam * grad
         A[indA] = np.maximum(np.abs(A[indA]) - gam * alpha * np.ones(len(indA[0])), 0)
 
@@ -805,10 +853,15 @@ def iterative_A(x_q,mu_N, alpha=0, seuil=1e-2, nitm=5000, prec=[1e-4, 1e-4]):
     indseuil = np.where(np.abs(A) < seuil)
     A[indseuil] = 0
     for nit in range(nitm):
-        crit2 = np.linalg.norm(x_q @ A.T - mu_N, 'fro') ** 2 / 2
+        #crit2 = np.linalg.norm(x_q @ A.T - mu_N, 'fro') ** 2 / 2
+        data = x_q @ A.T
+        crit2 = F.huber_loss(torch.tensor(data,dtype=torch.float32), torch.tensor(mu_N,dtype=torch.float32),reduction="mean") ** 2 / 2 
+        #crit2 = huber_loss(torch.tensor(data,dtype=torch.float32), torch.tensor(mu_N,dtype=torch.float32),delta=delta_robust) ** 2 / 2
+        crit2 = crit2.item()
+
         logger.info(f'{nit + 1} : crit2 = {crit2}')
 
-        grad = A @ Rc.T - Rd
+        grad = A @ Rc.T - Rd# CHANGEE
         A = A - gam * grad
         indseuil = np.where(np.abs(A) < seuil)
         A[indseuil] = 0
@@ -903,7 +956,5 @@ def coral(Ds, Dt, alpha):
     print(Ds.shape)
     print(Cs.shape)
     A = fractional_matrix_power(Cs,-0.5) @ fractional_matrix_power(Ct,0.5)
-    #Ds = Ds @ (fractional_matrix_power(Cs,-0.5))
-    #Ds = Ds @ (fractional_matrix_power(Ct,0.5))
     
     return A

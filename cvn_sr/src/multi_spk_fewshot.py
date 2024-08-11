@@ -43,48 +43,53 @@ def main():
     normalize = True
     args={}
     args['iter']=20
-    args['alpha']=20
+    alphas = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
     args['maj_vote'] = False
     method_info = {'device':'cuda','log_file':log_file,'args':args}
 
     methods = ['inductive','paddle']
 
     input_dir = "out_sampled_tasks_multispk"
-    for file in os.listdir(input_dir):
-        logger.info(f"Performing evaluation with n_query_per_class=5,n_eff=5,k_shot=3 with seed {file}.")
-        filepath = os.path.join(input_dir,file)
-        
-        test_embs,test_labels,test_audios,enroll_embs,enroll_labels,enroll_audios = data_SQ_from_pkl(filepath) 
-        enroll_embs, test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize)
-        
-        if 'paddle' in methods:
-            logger.info(f"Alpha is equal to {args['alpha']}.")
-        
-        run_acc = {}
-        for method in methods:
-            run_acc[method] = []
-        
-        for start in tqdm(range(0,n_tasks,batch_size)):
-            end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
-
-            x_q,y_q,x_s,y_s = (test_embs[start:end],
-                              test_labels[start:end],
-                              enroll_embs[start:end],
-                              enroll_labels[start:end])
-
+    alphas_acc =[]
+    for alpha in alphas:
+        args['alpha']=alpha
+        for file in os.listdir(input_dir):
+            logger.info(f"Performing evaluation with n_query_per_class=5,n_eff=5,k_shot=3 with seed {file}.")
+            filepath = os.path.join(input_dir,file)
+            
+            test_embs,test_labels,test_audios,enroll_embs,enroll_labels,enroll_audios = data_SQ_from_pkl(filepath) 
+            enroll_embs, test_embs = CL2N_embeddings(enroll_embs,test_embs,normalize)
+            
+            if 'paddle' in methods:
+                logger.info(f"Alpha is equal to {args['alpha']}.")
+            
+            run_acc = {}
             for method in methods:
-                if method=="paddle":
-                    acc_list = run_paddle_new(x_s, y_s, x_q, y_q,method_info)
-                else:
-                    eval = Simpleshot(avg="mean",backend="L2",method=method)
-                    acc_list = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end])
-                
-                run_acc[method].extend(acc_list)
-                
-        for key in run_acc.keys():
-            acc = sum(run_acc[key])/len(run_acc[key])*100
-            logger.info(f"{key} acc: {acc}%")
-        
+                run_acc[method] = []
+            
+            for start in tqdm(range(0,n_tasks,batch_size)):
+                end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
+
+                x_q,y_q,x_s,y_s = (test_embs[start:end],
+                                test_labels[start:end],
+                                enroll_embs[start:end],
+                                enroll_labels[start:end])
+
+                for method in methods:
+                    if method=="paddle":
+                        acc_list = run_paddle_new(x_s, y_s, x_q, y_q,method_info)
+                    else:
+                        eval = Simpleshot(avg="mean",backend="L2",method=method)
+                        acc_list = eval.eval(x_s, y_s, x_q, y_q, test_audios[start:end])
+                    
+                    run_acc[method].extend(acc_list)
+                    
+            for key in run_acc.keys():
+                acc = sum(run_acc[key])/len(run_acc[key])*100
+                logger.info(f"{key} acc: {acc}%")
+
+        alphas_acc.append(acc)
+    logger.info(alphas_acc) 
 
 if __name__ == "__main__":
     main()

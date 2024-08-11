@@ -32,7 +32,8 @@ def run_paddle_new(enroll_embs,enroll_labels,test_embs,test_labels,method_info):
 
 #@hydra_runner(config_path="../conf", config_name="speaker_identification_fewshot.yaml")
 def main():
-    log_file = get_log_file(log_path='log_single_speaker10k', backbone='ecapa', dataset='voxceleb1', method='all_nq_5_neff_5_kshot_3')
+    
+    log_file = get_log_file(log_path='log_single_speaker10k', backbone='ecapa', dataset='voxceleb1', method='all_nq_5_kshot_2')
     logger = Logger(__name__, log_file)
 
     n_tasks = 10000
@@ -41,14 +42,17 @@ def main():
     normalize = True
     args={}
     args['iter']=20
-    args['alpha']=20
-    args['maj_vote'] = False
+    args['alpha'] = 1
+    
+    args['maj_vote'] = True
     method_info = {'device':'cuda','log_file':log_file,'args':args}
-    methods = ['inductive','inductive_maj','transductive_centroid','transductive_L2_sum','EM','paddle']
+    #methods = ['inductive','inductive_maj','transductive_centroid','transductive_L2_sum','EM','paddle']
+    methods = ['paddle']
 
-    input_dir = "out_sampled_tasks_multispk"
+    input_dir = "out_sampled_tasks_nq_5_kshot_2"
+
     for file in os.listdir(input_dir):
-        logger.info(f"Performing evaluation with n_query_per_class=5,n_eff=5,k_shot=3 with seed {file}.")
+        logger.info(f"Performing evaluation with n_query_per_class=5,n_eff=1,k_shot=2 with seed {file}.")
         filepath = os.path.join(input_dir,file)
         
         test_embs,test_labels,test_audios,enroll_embs,enroll_labels,enroll_audios = data_SQ_from_pkl(filepath) 
@@ -65,9 +69,9 @@ def main():
             end = (start+batch_size) if (start+batch_size) <= n_tasks else n_tasks
 
             x_q,y_q,x_s,y_s = (test_embs[start:end],
-                              test_labels[start:end],
-                              enroll_embs[start:end],
-                              enroll_labels[start:end])
+                            test_labels[start:end],
+                            enroll_embs[start:end],
+                            enroll_labels[start:end])
 
             for method in methods:
                 if method=="paddle":
@@ -81,6 +85,8 @@ def main():
         for key in run_acc.keys():
             acc = sum(run_acc[key])/len(run_acc[key])*100
             logger.info(f"{key} acc: {acc}%")
+ 
 
 if __name__ == "__main__":
     main()
+    
